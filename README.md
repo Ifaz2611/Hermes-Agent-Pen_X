@@ -107,7 +107,7 @@ hermes-portable/
         └── linux-arm64/
 ```
 
----
+<!-- ---
 
 ## Setup API Keys
 
@@ -221,4 +221,4 @@ Keep your agent up-to-date with the latest improvements from Nous Research:
 
 *   **[Hermes Agent](https://github.com/NousResearch/hermes-agent)** — Powerful Agentic core created by [Nous Research](https://github.com/NousResearch).
 *   **[python-build-standalone](https://github.com/indygreg/python-build-standalone)** — Portable Python interpreter compilation.
-*   **[uv](https://github.com/astral-sh/uv)** — Blazing fast package installer and resolver. -->
+*   **[uv](https://github.com/astral-sh/uv)** — Blazing fast package installer and resolver. --> -->
