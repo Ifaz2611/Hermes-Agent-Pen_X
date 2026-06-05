@@ -1,5 +1,5 @@
 # ============================================================================
-# Hermes Portable - Windows Runtime Setup
+# Hermes Pendrive_X - Windows Runtime Setup
 # ============================================================================
 # Downloads and installs portable Python, Node.js, uv, ripgrep, Git,
 # clones Hermes source, creates venv, and installs dependencies.

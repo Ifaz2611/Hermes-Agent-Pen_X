@@ -1,4 +1,4 @@
-# <p align="center">🛸 Hermes Agent — Portable & Cross-Platform</p>
+<!-- # <p align="center">🛸 Hermes Agent — Portable & Cross-Platform</p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Hermes_Agent-Portable-8A2BE2?style=for-the-badge&logo=ai" alt="Hermes Agent Portable">
@@ -18,12 +18,12 @@
     <img src="https://img.youtube.com/vi/gL220WHXWeo/maxresdefault.jpg" alt="Hermes Portable Setup Walkthrough Video" width="700" style="border-radius: 12px; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3); border: 1px solid rgba(255, 255, 255, 0.15);">
   </a>
   <br>
-  <em>📺 <strong>Watch the Setup & Demo Video:</strong> Click the image above to watch the step-by-step walkthrough.</em>
+  <em><strong>Watch the Setup & Demo Video:</strong> Click the image above to watch the step-by-step walkthrough.</em>
 </p>
 
 ---
 
-## ✨ Key Features
+##  Key Features
 
 *    **Zero Host Dependencies**: No pre-installed Python, Node.js, or package managers required on the computer. All runtimes are downloaded locally.
 *    **100% Portable**: Copy the entire directory to a USB flash drive or external SSD. Run it on any Windows, macOS, or Linux computer instantly.
@@ -33,7 +33,7 @@
 
 ---
 
-## ⚡ Quick Start
+##  Quick Start
 
 Get Hermes running in seconds depending on your operating system:
 
@@ -52,7 +52,7 @@ chmod +x launch.sh
 
 ---
 
-## ⚙️ How It Works (Under the Hood)
+##  How It Works (Under the Hood)
 
 Hermes Portable solves the host-dependency issue by establishing a sandboxed runtime context pointing inwards.
 
@@ -79,7 +79,7 @@ graph TD
 
 ---
 
-## 📁 Workspace Directory Structure
+## Workspace Directory Structure
 
 A clean, modular layout where runtime caches are separated from your personal configurations.
 
@@ -90,7 +90,7 @@ hermes-portable/
 ├── scripts/
 │   ├── setup-windows.ps1      # Windows first-run configuration script
 │   └── setup-unix.sh          # Unix (macOS/Linux) first-run configuration script
-├── data/                      # ⚠️ [BACKUP THIS] All your private files
+├── data/                      # [BACKUP THIS] All your private files
 │   ├── config.yaml            # Hermes LLM provider configurations
 │   ├── .env                   # API Keys and active credentials
 │   ├── sessions/              # Chronological chat histories
@@ -109,7 +109,7 @@ hermes-portable/
 
 ---
 
-## 🗝️ Setup API Keys
+## Setup API Keys
 
 To configure your language models, open and edit the environment variables in `data/.env`:
 
@@ -136,7 +136,7 @@ Alternatively, you can select option **`[2]` (Setup / Reconfigure)** in the Laun
 
 ---
 
-## 📦 Cache & Runtime Footprint
+## Cache & Runtime Footprint
 
 | Component | Storage Size | Notes |
 | :--- | :--- | :--- |
@@ -145,7 +145,7 @@ Alternatively, you can select option **`[2]` (Setup / Reconfigure)** in the Laun
 | **Hermes Source Code** | ~50 MB | Cloned Git repository |
 | **User Data** | ~10 MB → 2 GB+ | Grows as memory and chat history expand |
 
-> ℹ️ *Note: If you run this folder across multiple operating systems (e.g., Windows at home and macOS at work), the `.cache/runtimes/` folder will scale to store the respective platforms (~1.8 GB total).*
+> ℹ*Note: If you run this folder across multiple operating systems (e.g., Windows at home and macOS at work), the `.cache/runtimes/` folder will scale to store the respective platforms (~1.8 GB total).*
 
 ---
 
@@ -173,7 +173,7 @@ Keep your agent up-to-date with the latest improvements from Nous Research:
 
 ---
 
-## 🔍 Troubleshooting & FAQ
+## Troubleshooting & FAQ
 
 <details>
 <summary><strong> First-run setup fails or times out</strong></summary>
@@ -217,8 +217,8 @@ Keep your agent up-to-date with the latest improvements from Nous Research:
 
 ---
 
-## 📝 Credits & Attribution
+## Credits & Attribution
 
 *   **[Hermes Agent](https://github.com/NousResearch/hermes-agent)** — Powerful Agentic core created by [Nous Research](https://github.com/NousResearch).
 *   **[python-build-standalone](https://github.com/indygreg/python-build-standalone)** — Portable Python interpreter compilation.
-*   **[uv](https://github.com/astral-sh/uv)** — Blazing fast package installer and resolver.
+*   **[uv](https://github.com/astral-sh/uv)** — Blazing fast package installer and resolver. -->

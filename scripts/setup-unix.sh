@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# Hermes Portable - Unix Runtime Setup (macOS / Linux)
+# Hermes Pendrive_X - Unix Runtime Setup (macOS / Linux)
 # ============================================================================
 # Downloads and installs portable Python, Node.js, uv, ripgrep,
 # clones Hermes source, creates venv, and installs dependencies.

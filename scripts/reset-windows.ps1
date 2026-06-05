@@ -1,5 +1,5 @@
 # ============================================================================
-# Hermes Portable - Reset Script (Windows)
+# Hermes Pendrive_X - Reset Script (Windows)
 # ============================================================================
 # Deletes downloaded runtimes and source code to trigger fresh first-run setup.
 #
@@ -19,7 +19,7 @@ $Root = Split-Path $PSScriptRoot -Parent
 # If no mode provided, ask interactively
 if (-not $Mode) {
     Write-Host "========================================" -ForegroundColor Cyan
-    Write-Host "   Hermes Portable - Reset" -ForegroundColor Cyan
+    Write-Host "   Hermes Pendrive_X - Reset" -ForegroundColor Cyan
     Write-Host "========================================" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "Choose reset mode:" -ForegroundColor Yellow
@@ -35,7 +35,7 @@ if (-not $Mode) {
 }
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "   Hermes Portable - Reset ($Mode)" -ForegroundColor Cyan
+Write-Host "   Hermes Pendrive_X - Reset ($Mode)" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 
 # Stop any running gateway first

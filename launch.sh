@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# Hermes Agent - Portable Launcher (macOS / Linux)
+# Hermes Agent - Pendrive_X Launcher (macOS / Linux)
 # ============================================================================
 # Terminal:   ./launch.sh
 # macOS Finder: rename this file to "launch.command" for double-click support.

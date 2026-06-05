@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# Hermes Portable - Reset Script (macOS / Linux)
+# Hermes Pendrive_X - Reset Script (macOS / Linux)
 # ============================================================================
 # Deletes downloaded runtimes and source code to trigger fresh first-run setup.
 #
@@ -16,7 +16,7 @@ MODE="${1:-}"
 # If no mode provided, ask interactively
 if [ -z "$MODE" ]; then
     echo "========================================"
-    echo "   Hermes Portable - Reset"
+    echo "   Hermes Pendrive_X - Reset"
     echo "========================================"
     echo ""
     echo "Choose reset mode:"
@@ -42,7 +42,7 @@ fi
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 echo "========================================"
-echo "   Hermes Portable - Reset ($MODE)"
+echo "   Hermes Pendrive_X - Reset ($MODE)"
 echo "========================================"
 
 # Stop any running gateway first
@@ -123,3 +123,7 @@ else
     echo "Next step: run ./launch.sh for a completely fresh start"
     echo "You'll need to re-run the setup wizard and re-enter API keys"
 fi
+
+
+
+# Agent modification by IFAZ -version Ethen Hunt
