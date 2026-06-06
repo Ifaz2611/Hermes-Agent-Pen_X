@@ -1,132 +1,215 @@
-# ============================================================================
-# Hermes Pendrive_X - Reset Script (Windows)
-# ============================================================================
-# Deletes downloaded runtimes and source code to trigger fresh first-run setup.
-#
-# Usage:
-#   .\scripts\reset-windows.ps1 -Mode soft    # Keep data/ folder (API keys, config)
-#   .\scripts\reset-windows.ps1 -Mode full    # Delete everything including data/
-# ============================================================================
+<# 
+.SYNOPSIS
+    Hermes Pendrive_X – Reset Script (Windows)
+
+.DESCRIPTION
+    Deletes downloaded runtimes and source code to force a fresh first‑run.
+    Supports two modes:
+        • soft  – removes runtimes + source, keeps the data folder (API keys, config,
+                  chat history).
+        • full  – removes everything, including the data folder.
+
+    The script is safe, logs its actions and can be run non‑interactively
+    with the -Force switch.
+
+.NOTES
+    v1.2.0 – Ethen Hunt (IFA​Z) – adapted from the Unix reset script.
+    Tested on PowerShell 7 (pwsh) and Windows PowerShell 5.1.
+
+.EXAMPLE
+    .\scripts\reset-windows.ps1 -Mode soft      # Interactive but keeps data
+    .\scripts\reset-windows.ps1 -Mode full -Force   # Fully automated full reset
+#>
+
+
+
 
 param(
-    [ValidateSet("soft", "full")]
-    [string]$Mode = ""
+    [ValidateSet('soft','full')]
+    [string] $Mode = '',
+
+    # Skip the “yes/no” prompt – useful for CI or automated provisioning
+    [switch] $Force
 )
 
-$ErrorActionPreference = "Stop"
-$Root = Split-Path $PSScriptRoot -Parent
+# -------------------------------------------------------------------------
+# General PowerShell hardening
+# -------------------------------------------------------------------------
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'          # Fail fast on any error
+$PSNativeCommandAlias = $true             # Keep native cmd aliases (optional)
 
-# If no mode provided, ask interactively
+# -------------------------------------------------------------------------
+# Constants & helpers
+# -------------------------------------------------------------------------
+$Root   = Split-Path -Path $PSScriptRoot -Parent
+$LogFile = Join-Path $Root 'reset.log'
+$Timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+
+function Write-Log {
+    param([string]$Message, [ConsoleColor]$Color = $Host.UI.RawUI.ForegroundColor)
+    $line = "[$Timestamp] $Message"
+    Write-Host $line -ForegroundColor $Color
+    $line | Out-File -FilePath $LogFile -Encoding utf8 -Append
+}
+
+function Ask-Confirmation {
+    param([string]$Prompt, [string]$Default = 'yes')
+    if ($Force) { return $true }   # No prompt when -Force is supplied
+
+    $answer = Read-Host "$Prompt [$Default/n]"
+    if ([string]::IsNullOrWhiteSpace($answer)) { $answer = $Default }
+    return $answer -match '^(y|yes)$'
+}
+
+# -------------------------------------------------------------------------
+# Resolve mode (interactive fallback)
+# -------------------------------------------------------------------------
 if (-not $Mode) {
-    Write-Host "========================================" -ForegroundColor Cyan
-    Write-Host "   Hermes Pendrive_X - Reset" -ForegroundColor Cyan
-    Write-Host "========================================" -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "Choose reset mode:" -ForegroundColor Yellow
-    Write-Host "  [1] Soft reset  - Delete runtimes + source, keep data/ (API keys, config, history)"
-    Write-Host "  [2] Full reset  - Delete everything including data/ (completely fresh start)"
-    Write-Host ""
-    $choice = Read-Host "Enter 1 or 2"
-    if ($choice -eq "2") {
-        $Mode = "full"
-    } else {
-        $Mode = "soft"
+    Write-Log 'No mode supplied – entering interactive selection' Yellow
+
+    Write-Host '========================================' -ForegroundColor Cyan
+    Write-Host '   Hermes Pendrive_X - Reset'           -ForegroundColor Cyan
+    Write-Host '========================================' -ForegroundColor Cyan
+    Write-Host ''
+    Write-Host 'Choose reset mode:'                     -ForegroundColor Yellow
+    Write-Host '  [1] Soft reset  - Delete runtimes + source, keep data' -ForegroundColor Yellow
+    Write-Host '  [2] Full reset  - Delete everything including data'   -ForegroundColor Yellow
+    Write-Host ''
+    $choice = Read-Host 'Enter 1 or 2'
+    switch ($choice) {
+        '2' { $Mode = 'full' }
+        default { $Mode = 'soft' }
     }
 }
+Write-Log "Reset mode selected: $Mode" Cyan
 
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "   Hermes Pendrive_X - Reset ($Mode)" -ForegroundColor Cyan
-Write-Host "========================================" -ForegroundColor Cyan
-
-# Stop any running gateway first
-$lockFile = Join-Path $Root "data\auth.lock"
-if (Test-Path $lockFile) {
-    Write-Host "[INFO]  Stopping gateway (removing lock) ..." -ForegroundColor Yellow
-    Remove-Item $lockFile -Force -ErrorAction SilentlyContinue
+# -------------------------------------------------------------------------
+# 1️⃣ Stop any running Hermes gateway
+# -------------------------------------------------------------------------
+$LockFile = Join-Path $Root 'data\auth.lock'
+if (Test-Path $LockFile) {
+    Write-Log "[INFO] Removing auth lock: $LockFile" Yellow
+    Remove-Item -LiteralPath $LockFile -Force -ErrorAction SilentlyContinue
 }
 
-# Also try to kill any hermes gateway processes
-Get-Process | Where-Object { $_.ProcessName -like "*python*" -or $_.ProcessName -like "*hermes*" } | ForEach-Object {
-    try {
-        $cmd = (Get-WmiObject Win32_Process -Filter "ProcessId=$($_.Id)").CommandLine
-        if ($cmd -and $cmd -like "*hermes*gateway*") {
-            Write-Host "[INFO]  Killing gateway process PID $($_.Id) ..." -ForegroundColor Yellow
-            Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
+# Find processes whose command line contains "hermes*gateway*"
+$processes = Get-CimInstance -ClassName Win32_Process |
+    Where-Object { $_.CommandLine -like '*hermes*gateway*' }
+
+if ($processes) {
+    Write-Log "[INFO] Detected $($processes.Count) Hermes gateway process(es)" Yellow
+    if (Ask-Confirmation 'Kill the gateway processes now? (y/n)' 'y') {
+        foreach ($proc in $processes) {
+            try {
+                Write-Log "[KILL] PID $($proc.ProcessId) – $($proc.Name)" Yellow
+                Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
+            } catch {
+                Write-Log "  ❗ Failed to stop PID $($proc.ProcessId): $_" Red
+            }
         }
-    } catch {}
+    }
+} else {
+    Write-Log '[INFO] No Hermes gateway processes were found running.' Green
 }
 
-# --- Soft reset: delete runtimes + source, keep data ---
+# -------------------------------------------------------------------------
+# 2️⃣ Build the list of folders to delete
+# -------------------------------------------------------------------------
 $foldersToDelete = @()
 
-$runtimes = Join-Path $Root ".cache\runtimes"
-if (Test-Path $runtimes) {
-    $foldersToDelete += $runtimes
+# Helpers for path building (avoids escaping headaches)
+$AddFolder = {
+    param($PathPart)
+    $full = Join-Path $Root $PathPart
+    if (Test-Path $full) { $foldersToDelete += $full }
 }
 
-$src = Join-Path $Root "src\hermes-agent"
-if (Test-Path $src) {
-    $foldersToDelete += $src
+# Runtime & source – always present in the list
+$AddFolder '.cache\runtimes'
+$AddFolder 'src\hermes-agent'
+
+if ($Mode -eq 'full') {
+    $AddFolder 'data'          # Whole data directory
+    $AddFolder '.cache'        # Cache root (contains runtimes etc.)
 }
 
-# --- Full reset: also delete data ---
-if ($Mode -eq "full") {
-    $data = Join-Path $Root "data"
-    if (Test-Path $data) {
-        $foldersToDelete += $data
+# Remove accidental duplicates – harmless but tidy
+$foldersToDelete = $foldersToDelete | Sort-Object -Unique
+if (-not $foldersToDelete) {
+    Write-Log "❌ No folders to delete – aborting." Red
+    exit 1
+}
+
+# -------------------------------------------------------------------------
+# 3️⃣ Show preview (size, colour‑coded) – optional for huge trees
+# -------------------------------------------------------------------------
+Write-Host ''
+Write-Host 'The following folders will be DELETED:' -ForegroundColor Yellow
+
+foreach ($folder in $foldersToDelete) {
+    # ---- size (fast approximation) ----
+    try {
+        $dirInfo = Get-Item -LiteralPath $folder -ErrorAction Stop
+        $sizeBytes = $dirInfo.Length               # total bytes on the directory
+        $sizeMB = [math]::Round($sizeBytes / 1MB, 1)
+    } catch {
+        $sizeMB = '??'                               # could be locked or hidden
     }
-    $cache = Join-Path $Root ".cache"
-    if (Test-Path $cache) {
-        $foldersToDelete += $cache
-    }
+
+    Write-Host "  - $folder ($sizeMB MB)" -ForegroundColor Red
 }
 
-# Confirm before deleting
-Write-Host ""
-Write-Host "The following folders will be DELETED:" -ForegroundColor Yellow
-foreach ($f in $foldersToDelete) {
-    $size = 0
-    if (Test-Path $f) {
-        $size = [math]::Round((Get-ChildItem $f -Recurse -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum / 1MB, 1)
-    }
-    Write-Host "  - $f ($size MB)" -ForegroundColor Red
-}
-
-if ($Mode -eq "soft") {
-    Write-Host ""
-    Write-Host "Your data folder is PRESERVED:" -ForegroundColor Green
+if ($Mode -eq 'soft') {
+    Write-Host ''
+    Write-Host 'Your data folder is PRESERVED:' -ForegroundColor Green
     Write-Host "  - $Root\data\.env        (API keys)"
     Write-Host "  - $Root\data\config.yaml  (settings)"
     Write-Host "  - $Root\data\sessions\    (chat history)"
 }
 
-Write-Host ""
-$confirm = Read-Host "Type 'yes' to confirm deletion"
-if ($confirm -ne "yes") {
-    Write-Host "Cancelled. Nothing was deleted." -ForegroundColor Yellow
+# -------------------------------------------------------------------------
+# 4️⃣ Final confirmation (or skip with -Force)
+# -------------------------------------------------------------------------
+if (Ask-Confirmation 'Proceed with deletion? (y/n)' 'yes') {
+    # Continue
+} else {
+    Write-Log 'User cancelled the operation – no changes made.' Yellow
     exit 0
 }
 
-# Perform deletion
-foreach ($f in $foldersToDelete) {
-    if (Test-Path $f) {
-        Write-Host "[DEL]   $f ..." -NoNewline
-        Remove-Item $f -Recurse -Force
-        Write-Host " done" -ForegroundColor Green
+# -------------------------------------------------------------------------
+# 5️⃣ Deletion loop – wrapped in try / catch for per‑folder safety
+# -------------------------------------------------------------------------
+foreach ($folder in $foldersToDelete) {
+    try {
+        Write-Host "[DEL]   $folder ..." -NoNewline
+        Remove-Item -LiteralPath $folder -Recurse -Force -ErrorAction Stop
+        Write-Host ' done' -ForegroundColor Green
+        Write-Log "Deleted folder: $folder" Green
+    } catch {
+        Write-Host ' ❌' -ForegroundColor Red
+        Write-Log "Failed to delete $folder : $_" Red
     }
 }
 
-Write-Host ""
-Write-Host "========================================" -ForegroundColor Green
-Write-Host "   Reset Complete!" -ForegroundColor Green
-Write-Host "========================================" -ForegroundColor Green
+# -------------------------------------------------------------------------
+# 6️⃣ Completion banner & next steps
+# -------------------------------------------------------------------------
+Write-Host ''
+Write-Host '========================================' -ForegroundColor Green
+Write-Host '   Reset Complete!'                -ForegroundColor Green
+Write-Host '========================================' -ForegroundColor Green
 
-if ($Mode -eq "soft") {
-    Write-Host ""
-    Write-Host "Next step: run .\launch.bat to re-download runtimes"
-    Write-Host "Your API keys and config are still saved in data\"
+if ($Mode -eq 'soft') {
+    Write-Host ''
+    Write-Host "Next step: run .\launch.bat to re‑download runtimes" -ForegroundColor Cyan
+    Write-Host "Your API keys and config are still saved in $Root\data\" -ForegroundColor Cyan
 } else {
-    Write-Host ""
-    Write-Host "Next step: run .\launch.bat for a completely fresh start"
-    Write-Host "You'll need to re-run the setup wizard and re-enter API keys"
+    Write-Host ''
+    Write-Host "Next step: run .\launch.bat for a completely fresh start" -ForegroundColor Cyan
+    Write-Host "You will need to re‑run the setup wizard and re‑enter API keys" -ForegroundColor Cyan
 }
+
+Write-Log "Reset script finished (Mode=$Mode)." Green
+exit 0

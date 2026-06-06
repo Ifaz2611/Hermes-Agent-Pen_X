@@ -1,129 +1,151 @@
-#!/bin/bash
-# ============================================================================
-# Hermes Pendrive_X - Reset Script (macOS / Linux)
-# ============================================================================
-# Deletes downloaded runtimes and source code to trigger fresh first-run setup.
-#
+#!/usr/bin/env bash
+# =============================================================================
+# Hermes Pendrive_X – Reset Script (macOS / Linux)
+# =============================================================================
+# Deletes downloaded runtimes and source code to trigger a fresh first‑run
+# setup.  Provides soft (keep data) and full (wipe everything) modes.
+
 # Usage:
-#   bash scripts/reset-unix.sh soft    # Keep data/ folder (API keys, config)
-#   bash scripts/reset-unix.sh full    # Delete everything including data/
+#   ./reset-unix.sh soft   # Keep data/ (API keys, config, history)
+#   ./reset-unix.sh full   # Delete everything including data/
 # ============================================================================
 
-set -e
 
-MODE="${1:-}"
 
-# If no mode provided, ask interactively
-if [ -z "$MODE" ]; then
+
+
+set -euo pipefail      # fail on errors, unset vars, or failed pipelines
+IFS=$'\n\t'            # safer word splitting
+
+# --------------------[ Constants ]-------------------------------------------
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+VERSION="1.1.0 (IFA​Z – Ethen Hunt)"      # <-- change as needed
+LOGFILE="$ROOT/reset.log"
+DATE_FMT="%Y-%m-%d %H:%M:%S"
+
+# --------------------[ Helper functions ]------------------------------------
+log() {
+    local msg=$1
+    printf "[%s] %s\n" "$(date +"$DATE_FMT")" "$msg" | tee -a "$LOGFILE"
+}
+
+die() {
+    log "ERROR: $1"
+    exit 1
+}
+
+confirm() {
+    local prompt=$1 default=$2
+    local reply
+    read -r -p "$prompt [$default/n] " reply
+    [[ -z "$reply" ]] && reply="$default"
+    [[ "$reply" == "$default" || "$reply" == "y" || "$reply" == "Y" ]]
+}
+
+# --------------------[ Parse arguments ]------------------------------------
+MODE="${1:-}"   # empty = interactive
+
+[[ -z "$MODE" ]] && {
     echo "========================================"
     echo "   Hermes Pendrive_X - Reset"
     echo "========================================"
     echo ""
-    echo "Choose reset mode:"
-    echo "  [1] Soft reset  - Delete runtimes + source, keep data/ (API keys, config, history)"
-    echo "  [2] Full reset  - Delete everything including data/ (completely fresh start)"
-    echo ""
-    read -p "Enter 1 or 2: " choice
-    if [ "$choice" = "2" ]; then
-        MODE="full"
-    else
-        MODE="soft"
-    fi
-fi
+    echo "Select reset mode:"
+    echo "  1) soft  – delete runtimes + source, keep data/"
+    echo "  2) full  – delete everything, including API keys"
+    read -r -p "Enter 1 or 2: " choice
+    [[ "$choice" == "2" ]] && MODE=full || MODE=soft
+}
 
-if [ "$MODE" != "soft" ] && [ "$MODE" != "full" ]; then
-    echo "Usage: $0 [soft|full]"
-    echo ""
-    echo "  soft  - Delete runtimes + source, keep data/ (API keys, config, history)"
-    echo "  full  - Delete everything including data/ (completely fresh start)"
-    exit 1
-fi
+case "$MODE" in
+    soft|full) ;;   # ok
+    *) die "Invalid mode: '$MODE'. Use 'soft' or 'full'." ;;
+esac
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+log "Reset started ($MODE) – version $VERSION"
 
-echo "========================================"
-echo "   Hermes Pendrive_X - Reset ($MODE)"
-echo "========================================"
-
-# Stop any running gateway first
+# --------------------[ Graceful shutdown ]----------------------------------
 LOCK_FILE="$ROOT/data/auth.lock"
-if [ -f "$LOCK_FILE" ]; then
-    echo "[INFO]  Stopping gateway (removing lock) ..."
+if [[ -f "$LOCK_FILE" ]]; then
+    log "[INFO] Removing auth lock: $LOCK_FILE"
     rm -f "$LOCK_FILE"
 fi
 
-# Try to kill any hermes gateway processes
-pkill -f "hermes.*gateway" 2>/dev/null || true
+# Ask before killing the gateway processes
+if confirm "[INFO] Kill any running 'hermes gateway' processes? (y/n) " "y"; then
+    # Use pgrep with a precise name if possible; fallback to pkill
+    if pgrep -f "hermes.*gateway" >/dev/null 2>&1; then
+        log "[INFO] Killing hermes gateway processes ..."
+        pkill -f "hermes.*gateway" || true
+    else
+        log "[INFO] No matching gateway processes found."
+    fi
+fi
 
-# Collect folders to delete
+# --------------------[ Build delete list ]---------------------------------
 FOLDERS=()
+[[ -d "$ROOT/.cache/runtimes" ]]   && FOLDERS+=("$ROOT/.cache/runtimes")
+[[ -d "$ROOT/src/hermes-agent" ]] && FOLDERS+=("$ROOT/src/hermes-agent")
 
-if [ -d "$ROOT/.cache/runtimes" ]; then
-    FOLDERS+=("$ROOT/.cache/runtimes")
+if [[ "$MODE" == "full" ]]; then
+    [[ -d "$ROOT/data" ]]    && FOLDERS+=("$ROOT/data")
+    [[ -d "$ROOT/.cache" ]] && FOLDERS+=("$ROOT/.cache")
 fi
 
-if [ -d "$ROOT/src/hermes-agent" ]; then
-    FOLDERS+=("$ROOT/src/hermes-agent")
-fi
+[[ ${#FOLDERS[@]} -eq 0 ]] && die "No folders to delete. Exiting."
 
-if [ "$MODE" = "full" ]; then
-    if [ -d "$ROOT/data" ]; then
-        FOLDERS+=("$ROOT/data")
-    fi
-    if [ -d "$ROOT/.cache" ]; then
-        FOLDERS+=("$ROOT/.cache")
-    fi
-fi
-
-# Show what will be deleted
+# --------------------[ Preview && backup (full) ]---------------------------
 echo ""
 echo "The following folders will be DELETED:"
 for f in "${FOLDERS[@]}"; do
-    if [ -d "$f" ]; then
-        SIZE=$(du -sm "$f" 2>/dev/null | cut -f1)
-        echo "  - $f (${SIZE} MB)"
-    fi
+    # Show size safely; fallback to 0 on error
+    SIZE=$(du -sb "$f" 2>/dev/null | cut -f1 || echo 0)
+    HUMAN=$(numfmt --to=iec "$SIZE")
+    printf "  - %s (%s)\n" "$f" "$HUMAN"
 done
 
-if [ "$MODE" = "soft" ]; then
+if [[ "$MODE" == "full" && -d "$ROOT/data" ]]; then
     echo ""
-    echo "Your data folder is PRESERVED:"
-    echo "  - $ROOT/data/.env        (API keys)"
-    echo "  - $ROOT/data/config.yaml  (settings)"
-    echo "  - $ROOT/data/sessions/    (chat history)"
+    if confirm "Backup 'data/' to 'backup/data-<timestamp>'? (y/n)" "y"; then
+        BACKUP_DIR="${ROOT}/backup"
+        mkdir -p "$BACKUP_DIR"
+        TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+        cp -a "$ROOT/data" "${BACKUP_DIR}/data-${TIMESTAMP}"
+        log "[INFO] Backup created at ${BACKUP_DIR}/data-${TIMESTAMP}"
+    fi
 fi
 
-echo ""
-read -p "Type 'yes' to confirm deletion: " CONFIRM
-if [ "$CONFIRM" != "yes" ]; then
-    echo "Cancelled. Nothing was deleted."
+# Final confirmation
+if ! confirm "[WARN] ALL listed folders will be permanently removed. Continue? (y/n)" "y"; then
+    log "User cancelled the reset."
     exit 0
 fi
 
-# Perform deletion
+# --------------------[ Deletion ]--------------------------------------------
 for f in "${FOLDERS[@]}"; do
-    if [ -d "$f" ]; then
-        echo -n "[DEL]   $f ..."
-        rm -rf "$f"
-        echo " done"
+    if [[ -d "$f" ]]; then
+        log "Deleting $f ..."
+        rm -rf -- "$f"
+        log "Deleted $f"
     fi
 done
 
+log "Reset completed successfully."
+
+# --------------------[ Post‑reset instructions ]-----------------------------
 echo ""
 echo "========================================"
-echo "   Reset Complete!"
+echo "   Reset Complete (${MODE^^})"
 echo "========================================"
-
-if [ "$MODE" = "soft" ]; then
-    echo ""
-    echo "Next step: run ./launch.sh to re-download runtimes"
-    echo "Your API keys and config are still saved in data/"
+if [[ "$MODE" == "soft" ]]; then
+    echo "Next step: run ./launch.sh to re‑download runtimes."
+    echo "Your API keys and config remain in $ROOT/data."
 else
-    echo ""
-    echo "Next step: run ./launch.sh for a completely fresh start"
-    echo "You'll need to re-run the setup wizard and re-enter API keys"
+    echo "Next step: run ./launch.sh for a completely fresh start."
+    echo "You will need to re‑run the setup wizard and re‑enter API keys."
 fi
 
+log "Finished script – instructions shown to user."
 
-
-# Agent modification by IFAZ -version Ethen Hunt
+exit 0

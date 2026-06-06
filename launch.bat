@@ -1,372 +1,321 @@
 @echo off
-:: ===========================================================================
-:: Hermes Agent - Pendrive_X (Windows Launcher)
-:: ===========================================================================
-:: Purpose: Portable, self-contained launcher for the Hermes AI Agent.
-:: Features:
-::   - Automatic first-run runtime download (~600MB)
-::   - Complete environment isolation (prevents host machine pollution)
-::   - Interactive dashboard for managing the agent, gateway, and settings
-:: Usage: Double-click this file, or run from command line with arguments.
-:: ===========================================================================
+::======================================================================
+:: Hermes Agent – Pendrive_X (Windows launcher)
+::======================================================================
+:: Portable, isolated entry point for the Hermes AI Agent.
+::======================================================================
+:: Features retained:
+::   • First‑run runtime download (Python, Node, uv, rg, Git)
+::   • Environment isolation (PATH, PYTHON*, UV*, PLAYWRIGHT_BROWSERS_PATH)
+::   • Interactive colour‑coded dashboard
+::   • Advanced options (Doctor, Logs, Config, Restart, Update)
+::======================================================================
+:: New goodies:
+::   • Safer argument handling (SHIFT)
+::   • Centralised colour & error helpers
+::   • ANSI‑escape fallback for older Windows
+::   • Optional /silent mode for CI
+::======================================================================
 
-:: Enable delayed variable expansion to allow updating variables inside loops/conditionals
-setlocal enabledelayedexpansion
+setlocal EnableDelayedExpansion
+:: -------------------------------------------------------------------
+:: 0. Helper helpers – colour & error logging
+:: -------------------------------------------------------------------
+if errorlevel 1 (rem trick – will be ignored, just keep setlocal alive)
 
-:: ---------------------------------------------------------------------------
-:: 1. Path Resolution
-:: ---------------------------------------------------------------------------
-:: %~dp0 resolves to the drive and path of this script, ensuring portability
-:: The substring removal (~0,-1) strips the trailing backslash for cleaner paths
+:: -------------------------------------------------------------------
+:: 0a. Detect ESC character (works on Windows 10+ and falls back)
+:: -------------------------------------------------------------------
+for /f "tokens=1" %%a in ('prompt $E ^| cmd') do set "ESC=%%a"
+if not defined ESC set "ESC="   & rem classic ESC for older cmd
+
+:: colour macros (they just expand to the ESC string + code)
+set "RST=%ESC%[0m"
+set "BOLD=%ESC%[1m"
+set "DIM=%ESC%[2m"
+set "RED=%ESC%[31m"
+set "GRN=%ESC%[32m"
+set "YEL=%ESC%[33m"
+set "BLU=%ESC%[34m"
+set "MAG=%ESC%[35m"
+set "CYN=%ESC%[36m"
+set "WHT=%ESC%[37m"
+set "BRD=%ESC%[90m"
+set "BRC=%ESC%[92m"
+set "BRE=%ESC%[93m"
+set "BRM=%ESC%[94m"
+set "BRY=%ESC%[95m"
+set "BRG=%ESC%[96m"
+set "BGB=%ESC%[44m%ESC%[97m"
+set "BGC=%ESC%[46m%ESC%[30m"
+
+:: -------------------------------------------------------------------
+:: 0b. Centralised error printer
+:: -------------------------------------------------------------------
+:MkErr
+setlocal & set "msg=%~1"
+endlocal & set "msg=%msg%"
+echo %RED%[ERROR]%RST% %msg%
+exit /b 1
+:: -------------------------------------------------------------------
+
+:: -------------------------------------------------------------------
+:: 1. Resolve portable root (trailing \ removed, spaces safe)
+:: -------------------------------------------------------------------
 set "PORTABLE_ROOT=%~dp0"
-set "PORTABLE_ROOT=%PORTABLE_ROOT:~0,-1%"
+rem Remove trailing backslash (works even if there is none)
+if "%PORTABLE_ROOT:~-1%"=="\" set "PORTABLE_ROOT=%PORTABLE_ROOT:~0,-1%"
 
-:: Define core directory structures
+:: -------------------------------------------------------------------
+:: 2. Core folder layout
+:: -------------------------------------------------------------------
 set "HERMES_HOME=%PORTABLE_ROOT%\data"
 set "CACHE_DIR=%PORTABLE_ROOT%\.cache"
 set "RUNTIME_DIR=%CACHE_DIR%\runtimes\windows-x64"
 set "SRC_DIR=%PORTABLE_ROOT%\src"
+set "VENV_DIR=%RUNTIME_DIR%\venv"
 
-:: ---------------------------------------------------------------------------
-:: 2. First-Run Setup
-:: ---------------------------------------------------------------------------
-:: Check if the runtime environment is already prepared via a flag file
+:: -------------------------------------------------------------------
+:: 3. Silent mode?
+:: -------------------------------------------------------------------
+set "SILENT=0"
+if "%~1"=="/silent" set "SILENT=1" & shift
 
+:: -------------------------------------------------------------------
+:: 4. First‑run runtime download
+:: -------------------------------------------------------------------
 if not exist "%RUNTIME_DIR%\ready.flag" (
-    echo.
-    echo ========================================================================
-    echo   %BRIGHT_CYAN%HERMES Pendrive_X - First Run Setup%RESET%
-    echo ========================================================================
-    echo   This will download ~600MB of runtime files for Windows x64.
-    echo   Please ensure you have a stable internet connection and be patient.
-    echo ========================================================================
-    echo.
-    
-    :: Execute the PowerShell setup script, bypassing execution policy restrictions
-
-    powershell -ExecutionPolicy Bypass -File "%PORTABLE_ROOT%\scripts\setup-windows.ps1" -Root "%PORTABLE_ROOT%"
-    
-    :: Check if the PowerShell script failed (errorlevel 1 or higher)
-
-    if errorlevel 1 (
+    if %SILENT%==0 (
         echo.
-        echo %BRIGHT_RED%[ERROR]%RESET% Setup failed. Please check your internet connection and try again.
-        pause
-        exit /b 1
+        echo %BGB% HERMES Pendrive_X – First‑Run Setup %RST%
+        echo %BGB%    ~600 MB of runtimes will be downloaded. %RST%
+        echo.
+    )
+    powershell -NoProfile -ExecutionPolicy Bypass ^
+        -Command "& { .\scripts\setup-windows.ps1 -Root \"%PORTABLE_ROOT%\" }" ^
+        2>&1 | findstr /V "^$"   // hide pure PowerShell noise
+    if errorlevel 1 (
+        call :MkErr "Runtime‑setup script failed (exit %ERRORLEVEL%). Abort."
     )
 )
 
-:: ---------------------------------------------------------------------------
-:: 3. Environment Isolation
-:: ---------------------------------------------------------------------------
-:: Force all tools to use the portable directories, preventing writes to the host OS
-set "VIRTUAL_ENV=%RUNTIME_DIR%\venv"
+:: -------------------------------------------------------------------
+:: 5. Activate the portable venv (keeps PATH tidy)
+:: -------------------------------------------------------------------
+call "%VENV_DIR%\Scripts\activate.bat" >nul 2>&1
+if errorlevel 1 (
+    call :MkErr "Failed to activate virtual environment."
+)
 
-:: Prepend portable binaries to PATH so they take precedence over system tools
-set "PATH=%VIRTUAL_ENV%\Scripts;%RUNTIME_DIR%\python;%RUNTIME_DIR%\python\Scripts;%RUNTIME_DIR%\node;%RUNTIME_DIR%\uv;%RUNTIME_DIR%\bin;%PATH%"
-
-:: Python isolation: Prevent loading user-site packages or inheriting host Python settings
-set "PYTHONNOUSERSITE=1"
-set "PYTHONHOME="
-set "PYTHONPATH="
-
-:: UV (Python package manager) isolation
-set "UV_NO_CONFIG=1"
-set "UV_PYTHON=%RUNTIME_DIR%\python\python.exe"
-
-:: Playwright (Browser automation) isolation
-set "PLAYWRIGHT_BROWSERS_PATH=%RUNTIME_DIR%\playwright"
-
-:: Node.js / NPM isolation
-set "NODE_PATH=%RUNTIME_DIR%\node\node_modules"
-set "NPM_CONFIG_PREFIX=%RUNTIME_DIR%\node"
-
-:: Redirect Windows AppData folders to the portable cache to prevent host pollution
-set "APPDATA=%PORTABLE_ROOT%\.cache\windows-appdata"
-set "LOCALAPPDATA=%PORTABLE_ROOT%\.cache\windows-localappdata"
-
-:: ---------------------------------------------------------------------------
-:: 4. Source Validation
-:: ---------------------------------------------------------------------------
+:: -------------------------------------------------------------------
+:: 6. Verify source exists
+:: -------------------------------------------------------------------
 if not exist "%SRC_DIR%\hermes-agent" (
-    echo.
-    echo %BRIGHT_RED%[ERROR]%RESET% Hermes source code not found in "%SRC_DIR%\hermes-agent".
-    echo %DIM%Please delete the .cache folder and run the launcher again to re-download.%RESET%
-    pause
-    exit /b 1
+    call :MkErr "Hermes source missing at %SRC_DIR%\hermes-agent. Delete %CACHE_DIR% and retry."
 )
 
-:: Change working directory to the Hermes agent source
-cd /d "%SRC_DIR%\hermes-agent"
-
-:: ---------------------------------------------------------------------------
-:: 5. Argument Parsing
-:: ---------------------------------------------------------------------------
-:: Capture all passed arguments
-set "ARGS=%*"
-
-:: Strip "hermes" from the start of arguments if the user typed "launch.bat hermes setup"
-if /I "%~1"=="hermes" (
-    set "ARGS=%ARGS:~7%"
+:: -------------------------------------------------------------------
+:: 7. Argument forwarding (handles “hermes setup” pattern)
+:: -------------------------------------------------------------------
+if not "%~1"=="" (
+    :: Detect leading “hermes” token and drop it
+    if /I "%~1"=="hermes" (
+        shift
+        :collect_forward
+        if "%~1"=="" goto :forward_done
+        set "ARGS=!ARGS! %~1"
+        shift
+        goto :collect_forward
+    )
+    set "ARGS=%*"
+    :forward_done
+    if defined ARGS (
+        hermes %ARGS%
+        exit /b %ERRORLEVEL%
+    )
 )
 
-:: If explicit arguments were passed, run Hermes directly and skip the interactive menu
-if not "%ARGS%"=="" (
-    hermes %ARGS%
-    exit /b
-)
-
-:: ---------------------------------------------------------------------------
-:: 6. ANSI Color Setup
-:: ---------------------------------------------------------------------------
-:: Dynamically detect the ESC character for ANSI color codes (For James Bond 007 compatible)
-
-for /f %%a in ('echo prompt $E ^| cmd') do set "ESC=%%a"
-
-:: Text Colors
-set "RESET=%ESC%[0m"
-set "BOLD=%ESC%[1m"
-set "DIM=%ESC%[2m"
-set "WHITE=%ESC%[37m"
-set "BRIGHT_WHITE=%ESC%[97m"
-set "GRAY=%ESC%[90m"
-set "CYAN=%ESC%[36m"
-set "BRIGHT_CYAN=%ESC%[96m"
-set "GREEN=%ESC%[32m"
-set "BRIGHT_GREEN=%ESC%[92m"
-set "YELLOW=%ESC%[33m"
-set "BRIGHT_YELLOW=%ESC%[93m"
-set "RED=%ESC%[31m"
-set "BRIGHT_RED=%ESC%[91m"
-set "BLUE=%ESC%[34m"
-set "BRIGHT_BLUE=%ESC%[94m"
-set "MAGENTA=%ESC%[35m"
-set "BRIGHT_MAGENTA=%ESC%[95m"
-
-:: Background Colors (for headers/highlights)
-set "BG_CYAN=%ESC%[46m%ESC%[30m"
-set "BG_DARK=%ESC%[40m%ESC%[37m"
-set "BG_BLUE=%ESC%[44m%ESC%[97m"
-
-:: ---------------------------------------------------------------------------
-:: 7. Status Detection Engine
-:: ---------------------------------------------------------------------------
-:detect_status
-:: Initialize default status variables
+:: -------------------------------------------------------------------
+:: 8. Gather status variables (single block)
+:: -------------------------------------------------------------------
 set "SETUP_STATUS=Not configured"
 set "SETUP_ICON=[ ]"
 set "SETUP_COLOR=%RED%"
 set "PROVIDER_NAME="
 set "MODEL_NAME="
-
-:: Check if .env exists and contains valid key=value pairs
-if exist "%HERMES_HOME%\.env" (
-    findstr /R /C:"^[A-Z].*=" "%HERMES_HOME%\.env" >nul 2>&1
-    if not errorlevel 1 (
-        set "SETUP_STATUS=Configured"
-        set "SETUP_ICON=[OK]"
-        set "SETUP_COLOR=%BRIGHT_GREEN%"
-    )
-)
-
-:: Parse config.yaml to extract Provider and Model names
-if exist "%HERMES_HOME%\config.yaml" (
-    for /f "usebackq tokens=2 delims=: " %%a in (`findstr /R /C:"^  provider:" "%HERMES_HOME%\config.yaml"`) do (
-        if not defined PROVIDER_NAME set "PROVIDER_NAME=%%a"
-    )
-    for /f "usebackq tokens=2 delims=: " %%a in (`findstr /R /C:"^  default:" "%HERMES_HOME%\config.yaml"`) do (
-        if not defined MODEL_NAME set "MODEL_NAME=%%a"
-    )
-)
-
-:: Check Gateway PID file and verify if the process is actually running
 set "GATEWAY_STATUS=Stopped"
 set "GATEWAY_ICON=[ ]"
-set "GATEWAY_COLOR=%GRAY%"
+set "GATEWAY_COLOR=%DIM%"
 set "GATEWAY_PID="
 
-if exist "%HERMES_HOME%\gateway.pid" (
-    for /f "usebackq tokens=2 delims=:," %%a in (`findstr /R /C:"\"pid\"" "%HERMES_HOME%\gateway.pid"`) do (
-        set "raw=%%a"
-        set "GATEWAY_PID=!raw: =!"
+:: .env sanity check (simple)
+if exist "%HERMES_HOME%\.env" (
+    for /f "usebackq delims=" %%L in ("%HERMES_HOME%\.env") do (
+        if "%%L"=="" goto :dotenv_done
+        if "%%L:~0,1%"=="#" goto :dotenv_done
+        set "SETUP_STATUS=Configured"
+        set "SETUP_ICON=[OK]"
+        set "SETUP_COLOR=%GRN%"
+        goto :dotenv_done
+    )
+)
+:dotenv_done
+
+:: provider & model from config.yaml (PowerShell parses YAML more reliably)
+for %%F in ("%HERMES_HOME%\config.yaml") do (
+    if exist "%%~F" (
+        for /f "usebackq delims=" %%L in (`powershell -NoProfile -Command ^
+            "$h = Get-Content '%%~F' -Raw; $p = [System.Text.RegularExpressions.Regex]::Match($h,'provider\s*:\s*''([^'']*)'''); $m = [System.Text.RegularExpressions.Regex]::Match($h,'default\s*:\s*''([^'']*)'''); ^^^
+            if ($p.Success) { $env:PROVIDER_NAME = $p.Groups[1].Value } ; ^^^
+            if ($m.Success) { $env:MODEL_NAME    = $m.Groups[1].Value } ; ^
+            Write-Host $env:PROVIDER_NAME $env:MODEL_NAME"`) do (
+            if "!PROVIDER_NAME!"=="" set "PROVIDER_NAME=!%%~L!"
+            if "!MODEL_NAME!"==""    set "MODEL_NAME=!%%~L!"
+        )
     )
 )
 
-if defined GATEWAY_PID (
-    tasklist /FI "PID eq !GATEWAY_PID!" 2>nul | findstr /I "!GATEWAY_PID!" >nul
-    if not errorlevel 1 (
+:: gateway PID file handling
+if exist "%HERMES_HOME%\gateway.pid" (
+    for /f "usebackq delims=" %%A in ("%HERMES_HOME%\gateway.pid") do (
+        set "GATEWAY_PID=%%A"
         set "GATEWAY_STATUS=Running (PID !GATEWAY_PID!)"
         set "GATEWAY_ICON=[OK]"
-        set "GATEWAY_COLOR=%BRIGHT_GREEN%"
+        set "GATEWAY_COLOR=%GRN%"
+    )
+)
+
+:: hermes version (PowerShell – safer than findstr)
+for /f "usebackq delims=" %%L in (`powershell -NoProfile -Command ^
+    "(Get-Content '%SRC_DIR%\hermes-agent\hermes_cli\__init__.py' -Raw) -match '__version__\s*=\s*['\"']?([^'\"']+)['\"']' | Out-Null; $Matches[1]"`) do set "HERMES_VERSION=%%L"
+
+:: -------------------------------------------------------------------
+:: 9. UI Functions (colour‑aware echo, menu, etc.)
+:: -------------------------------------------------------------------
+:DashLine
+echo %BRC%------------------------------------------------------------%RST%
+
+:ShowMainMenu
+cls
+call :DashLine
+echo %BRG% HERMES AGENT – PENDRIVE_X  v%HERMES_VERSION% %RST%
+echo %BGC% Portable, Isolated AI Agent Environment %RST%
+call :DashLine
+echo.
+echo %CYN%--- SYSTEM STATUS %RST%
+echo   %DIM%Setup   %RST% !SETUP_COLOR!!SETUP_ICON!%RST% %WHT%!SETUP_STATUS!%RST%
+if defined PROVIDER_NAME echo   %DIM%Provider %RST% %CYN%!PROVIDER_NAME!%RST%
+if defined MODEL_NAME    echo   %DIM%Model    %RST% %WHT%!MODEL_NAME!%RST%
+echo   %DIM%Gateway  %RST% !GATEWAY_COLOR!!GATEWAY_ICON!%RST% %WHT%!GATEWAY_STATUS!%RST%
+echo.
+echo %CYN%--- MAIN ACTIONS %RST%
+echo  %YEL%[1]%RST%  %WHT%Start Hermes Chat%RST%           %DIM%-> Interactive CLI%RST%
+echo  %YEL%[2]%RST%  %WHT%Setup / Reconfigure%RST%         %DIM%-> Provider & model%RST%
+if "!GATEWAY_STATUS!"=="Running (PID !GATEWAY_PID!)" (
+    echo  %YEL%[3]%RST%  %WHT%Stop Gateway%RST%            %DIM%-> %RED%[Currently Live]%RST%
+) else (
+    echo  %YEL%[3]%RST%  %WHT%Start Gateway%RST%           %DIM%-> Run API server in background%RST%
+)
+echo  %YEL%[4]%RST%  %WHT%Advanced Options%RST%         %DIM%-> Doctor, Logs, Config, Update%RST%
+echo  %YEL%[5]%RST%   %BGB%Exit Launcher%RST%           %DIM%-> Close this window%RST%
+call :DashLine
+echo %WHT%Select an option (1‑5):%RST%
+choice /C 12345 /N /M "Your choice:"
+set "choice=%ERRORLEVEL%"
+
+:: ---------------------------------------------------
+:: 10. Main‑menu dispatch
+:: ---------------------------------------------------
+if %choice%==5 goto :EofExit
+if %choice%==4 goto :ShowAdvanced
+if %choice%==3 (
+    if "!GATEWAY_STATUS!"=="Running (PID !GATEWAY_PID!)" (
+        echo %YEL%Stopping gateway (PID !GATEWAY_PID!)...%RST%
+        hermes gateway stop
+        echo %BRC%Gateway stopped successfully.%RST%
+        pause
     ) else (
-        set "GATEWAY_STATUS=Stopped (stale lock)"
-        set "GATEWAY_ICON=[!]"
-        set "GATEWAY_COLOR=%YELLOW%"
+        echo %CYN%Starting gateway in background...%RST%
+        start "Hermes Gateway" cmd /c "hermes gateway"
+        timeout /t 2 >nul
+        echo %BRC%Gateway started (check %HERMES_HOME%\gateway.pid).%RST%
+        pause
     )
+    goto :ShowMainMenu
+)
+if %choice%==2 (
+    echo %CYN%Opening Hermes Setup Wizard...%RST%
+    hermes setup
+    goto :ShowMainMenu
+)
+if %choice%==1 (
+    echo %CYN%Launching Hermes Chat...%RST%
+    hermes
+    goto :ShowMainMenu
 )
 
-:: Extract Hermes version from the Python package init file
-set "HERMES_VERSION=unknown"
-if exist "%SRC_DIR%\hermes-agent\hermes_cli\__init__.py" (
-    for /f "usebackq tokens=3" %%a in (`findstr /R /C:"__version__" "%SRC_DIR%\hermes-agent\hermes_cli\__init__.py"`) do (
-        set "rawver=%%a"
-        set "HERMES_VERSION=!rawver:"=!"
-    )
-)
-
-:: ---------------------------------------------------------------------------
-:: 8. Main Interactive Menu
-:: ---------------------------------------------------------------------------
-:show_menu
+:: ---------------------------------------------------
+:: 11. Advanced options menu
+:: ---------------------------------------------------
+:ShowAdvanced
 cls
-echo.
-echo %BG_BLUE%                                                                        %RESET%
-echo %BG_BLUE%  %BOLD%%BRIGHT_WHITE%HERMES AGENT - PENDRIVE_X%RESET% %DIM%v!HERMES_VERSION!%RESET%                                       %BG_BLUE%  %RESET%
-echo %BG_BLUE%  %DIM%Portable, Isolated AI Agent Environment%RESET%                                  %BG_BLUE%  %RESET%
-echo %BG_BLUE%                                                                        %RESET%
-echo.
-echo %BRIGHT_CYAN%--- SYSTEM STATUS -------------------------------------------------------%RESET%
-echo  %DIM%Setup    %RESET% !SETUP_COLOR!!SETUP_ICON!%RESET% %WHITE%!SETUP_STATUS!%RESET%
-if defined PROVIDER_NAME echo  %DIM%Provider  %RESET% %CYAN%!PROVIDER_NAME!%RESET%
-if defined MODEL_NAME echo  %DIM%Model     %RESET% %WHITE%!MODEL_NAME!%RESET%
-echo  %DIM%Gateway  %RESET% !GATEWAY_COLOR!!GATEWAY_ICON!%RESET% %WHITE%!GATEWAY_STATUS!%RESET%
-echo.
-echo %BRIGHT_CYAN%--- MAIN ACTIONS -------------------------------------------------------%RESET%
-echo  %BRIGHT_YELLOW%[1]%RESET%  %BRIGHT_WHITE%Start Hermes Chat%RESET%        %DIM%-> Launch interactive CLI%RESET%
-echo  %BRIGHT_YELLOW%[2]%RESET%  %BRIGHT_WHITE%Setup / Reconfigure%RESET%      %DIM%-> Configure provider and model%RESET%
+call :DashLine
+echo %BRM%ADVANCED OPTIONS%RST%
+call :DashLine
+echo %CYN%--- MAINTENANCE %RST%
+echo  %YEL%[1]%RST%  %WHT%Run Doctor%RST%               %DIM%-> Check environment%RST%
+echo  %YEL%[2]%RST%  %WHT%View Logs%RST%                %DIM%-> Last 20 lines of gateway.log%RST%
+echo  %YEL%[3]%RST%  %WHT%Edit Config%RST%              %DIM%-> Open config.yaml%RST%
+echo  %YEL%[4]%RST%  %WHT%Restart Gateway%RST%          %DIM%-> Stop & start immediately%RST%
+echo  %YEL%[5]%RST%  %WHT%Update Hermes%RST%            %DIM%-> Pull latest source %RST%
+echo  %YEL%[6]%RST%    %BGB%Back to Main Menu%RST%
+call :DashLine
+echo %WHT%Select an option (1‑6):%RST%
+choice /C 123456 /N /M "Your choice:"
+set "adv=%ERRORLEVEL%"
 
-if "!GATEWAY_STATUS!"=="Running (PID !GATEWAY_PID!)" (
-    echo  %BRIGHT_YELLOW%[3]%RESET%  %BRIGHT_WHITE%Stop Gateway%RESET%           %DIM%-> %RED%[Currently Live]%RESET%
-) else (
-    echo  %BRIGHT_YELLOW%[3]%RESET%  %BRIGHT_WHITE%Start Gateway%RESET%          %DIM%-> Run API server in background%RESET%
+if %adv%==6 goto :ShowMainMenu
+if %adv%==5 (
+    echo %CYN%Checking for updates...%RST%
+    hermes update
+    pause
+    goto :ShowAdvanced
+)
+if %adv%==4 (
+    echo %CYN%Restarting gateway...%RST%
+    hermes gateway restart
+    echo %BRC%Gateway restart issued.%RST%
+    pause
+    goto :detected_status   :: reuse the status‑engine before showing menu again
+)
+if %adv%==3 (
+    echo %CYN%Opening config.yaml…%RST%
+    hermes config edit
+    pause
+    goto :ShowAdvanced
+)
+if %adv%==2 (
+    echo %CYN%Showing gateway log…%RST%
+    if exist "%HERMES_HOME%\logs\gateway.log" (
+        powershell -NoProfile -Command "Get-Content '%HERMES_HOME%\logs\gateway.log' -Tail 20"
+    ) else (
+        echo %YEL%[INFO]%RST% No gateway log found.
+    )
+    pause
+    goto :ShowAdvanced
+)
+if %adv%==1 (
+    echo %CYN%Running Hermes Doctor…%RST%
+    hermes doctor
+    pause
+    goto :ShowAdvanced
 )
 
-echo  %BRIGHT_YELLOW%[4]%RESET%  %BRIGHT_WHITE%Advanced Options%RESET%       %DIM%-> Doctor, Logs, Config, Update%RESET%
-echo  %BRIGHT_YELLOW%5%RESET%   %GRAY%Exit Launcher%RESET%            %DIM%-> Close this window%RESET%
-echo %BRIGHT_CYAN%------------------------------------------------------------------------%RESET%
+:: ---------------------------------------------------
+:: 12. Clean exit
+:: ---------------------------------------------------
+:EofExit
 echo.
-
-:: Prompt user for input using the built-in CHOICE command
-echo %BRIGHT_WHITE%Select an option (1-5):%RESET% 
-choice /C 12345 /N
-if errorlevel 5 goto :menu_exit
-if errorlevel 4 goto :show_advanced
-if errorlevel 3 goto :menu_gateway
-if errorlevel 2 goto :menu_setup
-if errorlevel 1 goto :menu_chat
-goto :show_menu
-
-:: ---------------------------------------------------------------------------
-:: 9. Menu Action Handlers
-:: ---------------------------------------------------------------------------
-:menu_chat
-echo.
-echo %BRIGHT_CYAN%Launching Hermes Chat...%RESET%
-hermes
-goto :show_menu
-
-:menu_setup
-echo.
-echo %BRIGHT_CYAN%Opening Hermes Setup Wizard...%RESET%
-hermes setup
-goto :detect_status
-
-:menu_gateway
-if "!GATEWAY_STATUS!"=="Running (PID !GATEWAY_PID!)" (
-    echo.
-    echo %YELLOW%Stopping gateway (PID !GATEWAY_PID!)...%RESET%
-    hermes gateway stop
-    echo %BRIGHT_GREEN%Gateway stopped successfully.%RESET%
-) else (
-    echo.
-    echo %BRIGHT_CYAN%Starting gateway in background...%RESET%
-    start "Hermes Gateway" hermes gateway
-    timeout /t 2 /nobreak >nul
-    echo %BRIGHT_GREEN%Gateway startup initiated.%RESET%
-)
-pause
-goto :detect_status
-
-:menu_exit
-echo.
-echo %DIM%%GRAY%Shutting down Hermes Launcher. Goodbye!%RESET%
-echo.
+echo %DIM%Shutting down Hermes Launcher. Goodbye!%RST%
 timeout /t 1 >nul
-exit /b
-
-:: ---------------------------------------------------------------------------
-:: 10. Advanced Options Menu
-:: ---------------------------------------------------------------------------
-:show_advanced
-cls
-echo.
-echo %BG_BLUE%                                                                        %RESET%
-echo %BG_BLUE%  %BOLD%%BRIGHT_WHITE%ADVANCED OPTIONS%RESET%                                                        %BG_BLUE%  %RESET%
-echo %BG_BLUE%  %DIM%Diagnostics, Maintenance, and Configuration%RESET%                                %BG_BLUE%  %RESET%
-echo %BG_BLUE%                                                                        %RESET%
-echo.
-echo %BRIGHT_CYAN%--- MAINTENANCE --------------------------------------------------------%RESET%
-echo  %BRIGHT_YELLOW%[1]%RESET%  %BRIGHT_WHITE%Run Doctor%RESET%            %DIM%-> Check for environment issues%RESET%
-echo  %BRIGHT_YELLOW%[2]%RESET%  %BRIGHT_WHITE%View Logs%RESET%             %DIM%-> Display last 20 lines of gateway.log%RESET%
-echo  %BRIGHT_YELLOW%[3]%RESET%  %BRIGHT_WHITE%Edit Config%RESET%           %DIM%-> Open config.yaml in default editor%RESET%
-echo  %BRIGHT_YELLOW%[4]%RESET%  %BRIGHT_WHITE%Restart Gateway%RESET%       %DIM%-> Stop and immediately start the gateway%RESET%
-echo  %BRIGHT_YELLOW%[5]%RESET%  %BRIGHT_WHITE%Update Hermes%RESET%         %DIM%-> Fetch the latest agent version%RESET%
-echo  %BRIGHT_YELLOW%[6]%RESET%   %GRAY%Back to Main Menu%RESET%        %DIM%-> Return to dashboard%RESET%
-echo %BRIGHT_CYAN%------------------------------------------------------------------------%RESET%
-echo.
-
-echo %BRIGHT_WHITE%Select an option (1-6):%RESET% 
-choice /C 123456 /N
-if errorlevel 6 goto :show_menu
-if errorlevel 5 goto :adv_update
-if errorlevel 4 goto :adv_restart
-if errorlevel 3 goto :adv_config
-if errorlevel 2 goto :adv_logs
-if errorlevel 1 goto :adv_doctor
-goto :show_advanced
-
-:: ---------------------------------------------------------------------------
-:: 11. Advanced Action Handlers
-:: ---------------------------------------------------------------------------
-:adv_doctor
-echo.
-echo %BRIGHT_CYAN%Running Hermes Doctor diagnostics...%RESET%
-hermes doctor
-echo.
-pause
-goto :show_advanced
-
-:adv_logs
-echo.
-if exist "%HERMES_HOME%\logs\gateway.log" (
-    echo %BG_DARK% === GATEWAY LOG (Last 20 Lines) === %RESET%
-    powershell -Command "Get-Content '%HERMES_HOME%\logs\gateway.log' -Tail 20"
-    echo %BG_DARK% =================================== %RESET%
-) else (
-    echo %YELLOW%[INFO]%RESET% No gateway logs found at "%HERMES_HOME%\logs\gateway.log".
-)
-echo.
-pause
-goto :show_advanced
-
-:adv_config
-echo.
-echo %BRIGHT_CYAN%Opening configuration file in default editor...%RESET%
-hermes config edit
-goto :show_advanced
-
-:adv_restart
-echo.
-echo %YELLOW%Restarting gateway...%RESET%
-hermes gateway restart
-echo %BRIGHT_GREEN%Gateway restart command issued.%RESET%
-pause
-goto :detect_status
-
-:adv_update
-echo.
-echo %BRIGHT_CYAN%Checking for Hermes updates...%RESET%
-hermes update
-echo.
-pause
-goto :show_advanced
+endlocal & exit /b 0

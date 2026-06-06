@@ -13,14 +13,6 @@
   No global installation. Zero host pollution. All conversations, configs, memories, and skills stay inside your folder.
 </p>
 
-<p align="center">
-  <a href="https://youtu.be/gL220WHXWeo" target="_blank">
-    <img src="https://img.youtube.com/vi/gL220WHXWeo/maxresdefault.jpg" alt="Hermes Portable Setup Walkthrough Video" width="700" style="border-radius: 12px; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3); border: 1px solid rgba(255, 255, 255, 0.15);">
-  </a>
-  <br>
-  <em><strong>Watch the Setup & Demo Video:</strong> Click the image above to watch the step-by-step walkthrough.</em>
-</p>
-
 ---
 
 ##  Key Features
