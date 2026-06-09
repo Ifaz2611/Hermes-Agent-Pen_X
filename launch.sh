@@ -241,7 +241,20 @@ if [[ "${OPTION_SILENT}" -eq 0 ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 9. Verify source code
+# 9. Unlock encrypted data vault (if encrypted)
+# ---------------------------------------------------------------------------
+if [[ -f "${PORTABLE_ROOT}/scripts/unlock-vault.sh" ]]; then
+  bash "${PORTABLE_ROOT}/scripts/unlock-vault.sh" "${HERMES_HOME}" "python3" "false"
+  if (( $? != 0 )); then
+    log error "Failed to unlock vault or user cancelled."
+    exit 1
+  fi
+else
+  log warn "unlock-vault.sh not found – skipping vault unlock."
+fi
+
+# ---------------------------------------------------------------------------
+# 10. Verify source code
 # ---------------------------------------------------------------------------
 if [[ ! -d "${SRC_DIR}/hermes-agent" ]]; then
   log error "Hermes source not found in ${SRC_DIR}/hermes-agent"
@@ -249,7 +262,7 @@ if [[ ! -d "${SRC_DIR}/hermes-agent" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 10. Argument handling
+# 11. Argument handling
 # ---------------------------------------------------------------------------
 # If a hermes sub‑command was supplied directly, forward it **without** opening
 # the UI.  Handles cases like:

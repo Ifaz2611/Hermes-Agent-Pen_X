@@ -440,7 +440,34 @@ function Install-MessagingDeps {
 Install-MessagingDeps
 
 # -------------------------------------------------------------------------
-# 🔟 Install Playwright browsers (optional)
+# Install Security Dependencies (Encryption & Hardware Tokens)
+# -------------------------------------------------------------------------
+function Install-SecurityDeps {
+    $venvPython = Join-Path $RuntimeDir 'venv\Scripts\python.exe'
+    $uvExe      = Join-Path $RuntimeDir 'uv\uv.exe'
+
+    Log-Entry INFO "Installing security dependencies (cryptography, yubikey-manager)..."
+    $sec = {
+        & $uvExe pip install --python $venvPython --link-mode=copy `
+            "cryptography>=41.0.0" `
+            "yubikey-manager>=5.0.0"
+    }
+    try {
+        Invoke-WithLog -Label "uv pip security" -ScriptBlock $sec
+        Log-Entry INFO "Security deps installed via uv."
+    }
+    catch {
+        Log-Entry WARN "uv install for security deps failed – trying pip."
+        & $venvPython -m pip install `
+            "cryptography>=41.0.0" `
+            "yubikey-manager>=5.0.0"
+        Log-Entry INFO "Security deps installed via pip."
+    }
+}
+Install-SecurityDeps
+
+# -------------------------------------------------------------------------
+#  Install Playwright browsers (optional)
 # -------------------------------------------------------------------------
 function Install-Playwright {
     $venvPython = Join-Path $RuntimeDir 'venv\Scripts\python.exe'

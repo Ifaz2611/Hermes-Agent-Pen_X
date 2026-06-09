@@ -108,6 +108,16 @@ if errorlevel 1 (
 )
 
 :: -------------------------------------------------------------------
+:: 5.5. Unlock encrypted data vault (if encrypted)
+:: -------------------------------------------------------------------
+powershell -NoProfile -ExecutionPolicy Bypass ^
+    -Command "& { .\scripts\unlock-vault.ps1 -DataDir \"%HERMES_HOME%\" -PythonExe \"python\" }" ^
+    2>&1
+if errorlevel 1 (
+    call :MkErr "Failed to unlock vault or user cancelled."
+)
+
+:: -------------------------------------------------------------------
 :: 6. Verify source exists
 :: -------------------------------------------------------------------
 if not exist "%SRC_DIR%\hermes-agent" (

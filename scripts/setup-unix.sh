@@ -410,6 +410,22 @@ install_telegram_deps() {
     log INFO "Telegram dependencies installed"
 }
 
+install_security_deps() {
+    [[ "$DRY_RUN" = true ]] && { log INFO "[DRY‑RUN] Would install security deps"; return; }
+
+    log INFO "Installing security dependencies (cryptography, yubikey-manager) ..."
+    if [ -x "${RUNTIME_DIR}/uv/uv" ]; then
+        "${RUNTIME_DIR}/uv/uv" pip install "$VENV_PYTHON" --link-mode=copy \
+            "cryptography>=41.0.0" \
+            "yubikey-manager>=5.0.0"
+    else
+        "$VENV_PYTHON" -m pip install \
+            "cryptography>=41.0.0" \
+            "yubikey-manager>=5.0.0"
+    fi
+    log INFO "Security dependencies installed"
+}
+
 install_playwright() {
     [[ "$SKIP_PLAYWRIGHT" = true ]] && { log INFO "Playwright browsers skipped"; return; }
     [[ "$DRY_RUN" = true ]] && { log INFO "[DRY‑RUN] Would install Playwright browsers"; return; }
@@ -461,9 +477,10 @@ install_hermes_source
 # Only after everything is present do we create the venv
 setup_venv
 
-# Dependency installation (core → telegram → playwright) can be conditional
+# Dependency installation (core → telegram → security → playwright) can be conditional
 install_python_deps
 install_telegram_deps
+install_security_deps
 install_playwright
 
 # Write lock / manifest flags
