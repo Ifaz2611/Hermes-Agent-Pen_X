@@ -76,13 +76,27 @@ set "SRC_DIR=%PORTABLE_ROOT%\src"
 set "VENV_DIR=%RUNTIME_DIR%\venv"
 
 :: -------------------------------------------------------------------
-:: 3. Silent mode?
+:: 3. Parse arguments (Silent & RAM Disk)
 :: -------------------------------------------------------------------
 set "SILENT=0"
-if "%~1"=="/silent" set "SILENT=1" & shift
+set "USE_RAMDISK=0"
+
+:parse_args
+if "%~1"=="" goto :args_done
+if /I "%~1"=="/silent" (
+    set "SILENT=1"
+    shift
+    goto :parse_args
+)
+if /I "%~1"=="/ramdisk" (
+    set "USE_RAMDISK=1"
+    shift
+    goto :parse_args
+)
+:args_done
 
 :: -------------------------------------------------------------------
-:: 4. First‑run runtime download
+:: 4. First‑run runtime download (Always against USB root)
 :: -------------------------------------------------------------------
 if not exist "%RUNTIME_DIR%\ready.flag" (
     if %SILENT%==0 (
@@ -93,14 +107,52 @@ if not exist "%RUNTIME_DIR%\ready.flag" (
     )
     powershell -NoProfile -ExecutionPolicy Bypass ^
         -Command "& { .\scripts\setup-windows.ps1 -Root \"%PORTABLE_ROOT%\" }" ^
-        2>&1 | findstr /V "^$"   // hide pure PowerShell noise
+        2>&1 | findstr /V "^$"
     if errorlevel 1 (
         call :MkErr "Runtime‑setup script failed (exit %ERRORLEVEL%). Abort."
     )
 )
 
 :: -------------------------------------------------------------------
-:: 5. Activate the portable venv (keeps PATH tidy)
+:: 5. RAM Disk / Read-Only Mode Optimization
+:: -------------------------------------------------------------------
+if %USE_RAMDISK%==1 (
+    echo %CYN%[PERF]%RST% RAM Disk mode enabled.
+    set "RAMDISK_ROOT=%TEMP%\hermes_ramdisk"
+    
+    :: We want to copy .cache and src, but NOT data (persistence on USB)
+    if not exist "!RAMDISK_ROOT!" mkdir "!RAMDISK_ROOT!"
+    
+    echo %CYN%[PERF]%RST% Syncing runtime to local temp (speed boost)...
+    
+    :: Copy .cache (runtimes)
+    if not exist "!RAMDISK_ROOT!\.cache\runtimes\windows-x64\ready.flag" (
+        echo %CYN%[PERF]%RST% Copying .cache (this may take 30-60s on USB 2.0)...
+        if not exist "!RAMDISK_ROOT!\.cache" mkdir "!RAMDISK_ROOT!\.cache"
+        xcopy "%CACHE_DIR%\*" "!RAMDISK_ROOT!\.cache\" /E /I /H /Y /Q >nul
+    )
+
+    :: Copy src
+    if not exist "!RAMDISK_ROOT!\src\hermes-agent" (
+        echo %CYN%[PERF]%RST% Copying src...
+        if not exist "!RAMDISK_ROOT!\src" mkdir "!RAMDISK_ROOT!\src"
+        xcopy "%SRC_DIR%\*" "!RAMDISK_ROOT!\src\" /E /I /H /Y /Q >nul
+    )
+
+    :: Redirect paths to RAM disk for this session
+    set "CACHE_DIR=!RAMDISK_ROOT!\.cache"
+    set "RUNTIME_DIR=!CACHE_DIR!\runtimes\windows-x64"
+    set "SRC_DIR=!RAMDISK_ROOT!\src"
+    set "VENV_DIR=!RUNTIME_DIR!\venv"
+
+    :: Fix venv path in pyvenv.cfg (absolute paths in venv need to point to RAM disk)
+    if exist "!VENV_DIR!\pyvenv.cfg" (
+        powershell -NoProfile -Command "(Get-Content '!VENV_DIR!\pyvenv.cfg') -replace '^home = .*', 'home = !RUNTIME_DIR!\python' | Set-Content '!VENV_DIR!\pyvenv.cfg'"
+    )
+)
+
+:: -------------------------------------------------------------------
+:: 6. Activate the portable venv (keeps PATH tidy)
 :: -------------------------------------------------------------------
 call "%VENV_DIR%\Scripts\activate.bat" >nul 2>&1
 if errorlevel 1 (

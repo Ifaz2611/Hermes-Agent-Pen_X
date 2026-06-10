@@ -265,10 +265,33 @@ function Write-Manifest {
 }
 
 # -------------------------------------------------------------------------
+# Helper – Read existing JSON manifest
+# -------------------------------------------------------------------------
+function Read-Manifest {
+    $manifestPath = Join-Path $RuntimeDir 'manifest.json'
+    if (Test-Path $manifestPath) {
+        try {
+            $json = Get-Content $manifestPath -Raw | ConvertFrom-Json
+            return $json
+        } catch {
+            Log-Entry WARN "Failed to parse manifest.json – assuming empty."
+            return $null
+        }
+    }
+    return $null
+}
+
+$CurrentManifest = Read-Manifest
+
+# -------------------------------------------------------------------------
 # 1️⃣ Portable Python
 # -------------------------------------------------------------------------
 function Install-Python {
     $info = $Versions['python']
+    if ($CurrentManifest -and $CurrentManifest.python -eq $info.version -and (Test-Path (Join-Path $RuntimeDir 'python'))) {
+        Log-Entry INFO "Python $($info.version) already installed. Skipping."
+        return
+    }
     $archive = Join-Path $RuntimeDir "python.$($info.ext)"
     $dest = Join-Path $RuntimeDir 'python'
     Download-File -Url "$($info.url)/$($info.tag)/cpython-$($info.version)-$($info.arch)-unknown-windows-msvc-install_only.$($info.ext)" -OutFile $archive
@@ -283,6 +306,10 @@ Install-Python
 # -------------------------------------------------------------------------
 function Install-Node {
     $info = $Versions['node']
+    if ($CurrentManifest -and $CurrentManifest.node -eq $info.version -and (Test-Path (Join-Path $RuntimeDir 'node'))) {
+        Log-Entry INFO "Node.js $($info.version) already installed. Skipping."
+        return
+    }
     $archive = Join-Path $RuntimeDir "node.$($info.url | Split-Path -Leaf)"
     $dest  = Join-Path $RuntimeDir 'node'
     Download-File -Url $info.url -OutFile $archive
@@ -297,6 +324,10 @@ Install-Node
 # -------------------------------------------------------------------------
 function Install-Uv {
     $info = $Versions['uv']
+    if ($CurrentManifest -and $CurrentManifest.uv -eq $info.version -and (Test-Path (Join-Path $RuntimeDir 'uv'))) {
+        Log-Entry INFO "uv $($info.version) already installed. Skipping."
+        return
+    }
     $archive = Join-Path $RuntimeDir "uv.$($info.url | Split-Path -Leaf)"
     $dest = Join-Path $RuntimeDir 'uv'
     Download-File -Url $info.url -OutFile $archive
@@ -311,6 +342,10 @@ if (-not $SkipUv) { Install-Uv }
 # -------------------------------------------------------------------------
 function Install-Rg {
     $info = $Versions['rg']
+    if ($CurrentManifest -and $CurrentManifest.rg -eq $info.version -and (Test-Path (Join-Path $RuntimeDir 'rg'))) {
+        Log-Entry INFO "ripgrep $($info.version) already installed. Skipping."
+        return
+    }
     $archive = Join-Path $RuntimeDir "rg.$($info.url | Split-Path -Leaf)"
     $dest = Join-Path $RuntimeDir 'rg'
     Download-File -Url $info.url -OutFile $archive
@@ -332,6 +367,10 @@ Install-Rg
 # -------------------------------------------------------------------------
 function Install-Git {
     $info = $Versions['git']
+    if ($CurrentManifest -and $CurrentManifest.git -eq $info.version -and (Test-Path (Join-Path $RuntimeDir 'git'))) {
+        Log-Entry INFO "Git $($info.version) already installed. Skipping."
+        return
+    }
     $archive = Join-Path $RuntimeDir "git.$($info.url | Split-Path -Leaf)"
     $dest = Join-Path $RuntimeDir 'git'
     try {
@@ -352,6 +391,25 @@ if (-not $SkipGit) { Install-Git }
 # -------------------------------------------------------------------------
 function Install-HermesSource {
     $info = $Versions['hermes']
+    $finalSrc = Join-Path $SrcDir 'hermes-agent'
+    
+    # Delta Update check: if .git exists, use git pull
+    if (Test-Path (Join-Path $finalSrc '.git')) {
+        Log-Entry INFO "Hermes source is a Git repo. Attempting delta update (git pull)..."
+        $gitExe = Join-Path $BinDir 'git.exe'
+        if (-not (Test-Path $gitExe)) { $gitExe = 'git' }
+        
+        try {
+            Set-Location $finalSrc
+            & $gitExe pull
+            Log-Entry INFO "Hermes source updated via Git."
+            return
+        } catch {
+            Log-Entry WARN "Git pull failed. Falling back to ZIP download."
+            Set-Location $Root
+        }
+    }
+
     $archive = Join-Path $RuntimeDir "source.$($info.url | Split-Path -Leaf)"
     $destTemp = Join-Path $TempDir 'source'
     Download-File -Url $info.url -OutFile $archive
@@ -359,7 +417,7 @@ function Install-HermesSource {
     # The zip contains a folder named “hermes‑agent‑<hash>”
     $srcSub = Get-ChildItem $destTemp -Directory | Select-Object -First 1
     if (-not $srcSub) { throw "Hermes source archive does not contain a sub‑folder." }
-    $finalSrc = Join-Path $SrcDir 'hermes-agent'
+    
     if (Test-Path $finalSrc) { Remove-Item $finalSrc -Recurse -Force }
     Move-Item -LiteralPath $srcSub.FullName -Destination $finalSrc -Force
     Log-Entry INFO "Hermes source extracted to $finalSrc"

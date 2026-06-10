@@ -9,7 +9,16 @@ These are the commands you type in your terminal / PowerShell.
 | Command | What it does |
 |---------|-------------|
 | `launch.bat` | Start Hermes TUI (chat interface) |
+| `launch.bat /ramdisk` | **[PERF]** Load runtime into RAM Disk for 10x faster speed on USB 2.0 |
+| `launch.bat /silent` | Run without interactive banners (CI mode) |
 | `launch.bat hermes` | Same as above |
+...
+### Optimization Features
+
+*   **RAM Disk Mode (`/ramdisk`):** Copies the ~600MB runtime from your USB drive to `%TEMP%`. Once loaded, Python and Node.js will run at SSD speeds instead of being throttled by USB 2.0 hardware.
+*   **Delta Updates:** The setup script now checks `manifest.json` and only downloads/extracts components that have actually changed.
+*   **Git Updates:** If `src/hermes-agent` is a Git repository, `launch.bat hermes update` will perform a surgical `git pull` instead of a full ZIP re-download.
+
 | `launch.bat setup` | Run setup wizard |
 | `launch.bat hermes setup` | Same as above |
 | `launch.bat gateway` | Start messaging gateway (Telegram, etc.) |
