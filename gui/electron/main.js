@@ -50,14 +50,41 @@ ipcMain.handle('open-data-folder', async () => {
 })
 
 ipcMain.handle('run-doctor', async () => {
-  // Attempt to run hermes doctor (assumes a command exists)
-  // Fall back to running `python -m hermes.doctor` if present
-  const pythonCmd = `python -m hermes_doctor 2>&1`
-  exec(pythonCmd, { cwd: repoRoot }, (err, stdout, stderr) => {
-    // stdout/stderr logged to console; the TUI doctor is expected to open in terminal.
-    if (err) {
-      console.error('Doctor command failed:', err)
-    }
+  // Run the JSON exporter and then open a graphical dashboard window.
+  const python = process.platform === 'win32' ? 'python' : 'python3'
+  const script = path.join(repoRoot, 'tools', 'doctor', 'export_health.py')
+
+  return new Promise((resolve) => {
+    exec(`"${python}" "${script}"`, { cwd: repoRoot }, (err, stdout, stderr) => {
+      if (err) {
+        console.error('Health exporter failed:', err)
+      }
+
+      // Open dashboard window
+      const dash = new BrowserWindow({
+        width: 900,
+        height: 700,
+        webPreferences: {
+          preload: path.join(__dirname, 'preload.js'),
+          nodeIntegration: false,
+          contextIsolation: true,
+        }
+      })
+
+      dash.loadFile(path.join(__dirname, 'dashboard.html'))
+
+      resolve({ status: 'dashboard-opened', exporter_err: err ? String(err) : null })
+    })
   })
-  return { status: 'launched' }
+})
+
+// Provide an IPC method for the renderer to request the health JSON
+ipcMain.handle('get-health-report', async () => {
+  try {
+    const reportPath = path.join(repoRoot, 'data', 'health.json')
+    const raw = require('fs').readFileSync(reportPath, 'utf8')
+    return JSON.parse(raw)
+  } catch (e) {
+    return { error: String(e) }
+  }
 })
