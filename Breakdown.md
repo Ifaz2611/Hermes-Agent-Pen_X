@@ -36,16 +36,12 @@
    * Read-Only Mode / RAM Disk: Options to load the runtime into a RAM disk for faster performance when running off slow USB 2.0 drives.
    * Delta Updates: Currently, updates might require re-cloning/re-downloading. Implementing a more surgical update mechanism for the .cache runtimes would save bandwidth.
 
-  3. Expanded "Portable" Tooling
-   * Local LLM Integration: Pre-configure portable versions of ollama or llama.cpp within the .cache/ folder to allow 100% offline, local-only operation.
-   * Portable Browser Bundle: Include a portable Chromium instance specifically for the computer-use and Playwright tools, as host-installed browsers often have restrictive sandbox policies.
-
-  4. UX & Management
+  3. UX & Management
    * GUI Wrapper: A lightweight Electron or Rust-based (Tauri) GUI launcher to replace the terminal menu for less technical users.
    * Cloud Sync (Optional/Encrypted): A way to sync only the data/ folder to a private cloud (S3/Dropbox) with end-to-end encryption, allowing users to move between machines without the physical drive.
    * Health Dashboard: A more advanced hermes doctor that visualizes resource usage (disk space, API costs) from the TUI.
 
-  5. Ecosystem Expansion
+  4. Ecosystem Expansion
    * Auto-MCP Manager: A simplified interface to download and "plug in" new Model Context Protocol (MCP) servers directly into the portable environment.
    * Multi-Agent Orchestration: Support for running multiple "clones" of Hermes with different SOUL.md profiles from the same portable root.
 

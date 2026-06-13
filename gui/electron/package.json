@@ -1,0 +1,14 @@
+{
+  "name": "hermes-gui",
+  "version": "0.1.0",
+  "description": "Lightweight Electron launcher for Hermes Agent",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^26.0.0"
+  }
+}
