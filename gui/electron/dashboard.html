@@ -7,11 +7,51 @@
       body { font-family: Arial, sans-serif; padding: 16px }
       pre { background:#f6f6f6; padding:12px; border-radius:6px }
       .card { border:1px solid #ddd; padding:12px; margin-bottom:10px; border-radius:6px }
+      .row { display:flex; gap:12px }
+      .col { flex:1 }
+      canvas { background: #fff; border-radius:6px }
+      #toolbar { margin-bottom:12px }
     </style>
   </head>
   <body>
     <h2>Hermes Health Dashboard</h2>
-    <div id="content">Loading...</div>
+    <div id="toolbar">
+      <button id="refresh">Refresh</button>
+    </div>
+
+    <div id="content">
+      <div class="row">
+        <div class="col card">
+          <h3>Disk / Vault</h3>
+          <canvas id="diskChart" width="400" height="200"></canvas>
+        </div>
+        <div class="col card">
+          <h3>Logs</h3>
+          <canvas id="logsChart" width="400" height="200"></canvas>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="col card">
+          <h3>API Costs (recent)</h3>
+          <canvas id="apiChart" width="800" height="200"></canvas>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="col card" id="vaultCard">
+          <h3>Vault</h3>
+          <pre id="vaultPre">Loading vault...</pre>
+        </div>
+        <div class="col card" id="envCard">
+          <h3>Environment</h3>
+          <pre id="envPre">Loading env...</pre>
+        </div>
+      </div>
+
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="dashboard.js"></script>
   </body>
 </html>
