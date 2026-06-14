@@ -74,10 +74,11 @@ log() {
 # 3. Resolve the portable root (absolute path, no trailing slash)
 # ---------------------------------------------------------------------------
 readonly PORTABLE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-readonly HERMES_HOME="${PORTABLE_ROOT}/data"
+HERMES_HOME_BASE="${PORTABLE_ROOT}/data"
+HERMES_HOME="${HERMES_HOME_BASE}"
 readonly CACHE_DIR="${PORTABLE_ROOT}/.cache"
 readonly SRC_DIR="${PORTABLE_ROOT}/src"
-readonly RUNTIME_DIR="${CACHE_DIR}/runtimes/${PLATFORM}-${ARCH}"
+readonly RUNTIME_DIR="${CACHE_DIR}/runtimes/${PLATFORM:-linux}-${ARCH:-x64}"
 readonly LOG_DIR="${CACHE_DIR}/logs"
 mkdir -p "$LOG_DIR"
 
@@ -100,7 +101,7 @@ case "$ARCH_RAW" in
 esac
 
 # ---------------------------------------------------------------------------
-# 5. Small CLI – help, version, silent, forced‑setup
+# 5. Small CLI – help, version, silent, forced‑setup, profile
 # ---------------------------------------------------------------------------
 print_help() {
   cat <<EOF
@@ -113,6 +114,7 @@ Options:
   -h, --help           Show this help message and exit
   -V, --version        Print launcher version and Hermes version
   -s, --silent         Run non‑interactive (no colour, no pauses)
+  --profile <name>     Specify a custom data profile
 
 EOF
 }
@@ -125,11 +127,13 @@ print_version() {
   printf "%s\n" "Hermes version:   %s" "$hermes_ver"
 }
 OPTION_SILENT=0
+OPTION_PROFILE=""
 while (( $# )); do
   case "${1,,}" in
     -h|--help)   print_help; exit 0 ;;
     -v|--version) print_version; exit 0 ;;
     -s|--silent) OPTION_SILENT=1; shift ;;
+    --profile)   OPTION_PROFILE="$2"; shift 2 ;;
     --setup)     # force re‑run of the setup script even if ready.flag exists
       rm -f "${RUNTIME_DIR}/ready.flag"
       shift ;;
@@ -138,6 +142,15 @@ while (( $# )); do
     *) break ;;   # unknown – treat as sub‑command for hermes
   esac
 done
+
+# Update HERMES_HOME if profile is specified
+if [[ -n "${OPTION_PROFILE}" ]]; then
+    HERMES_HOME="${HERMES_HOME_BASE}/profiles/${OPTION_PROFILE}"
+    if [[ "${OPTION_SILENT}" -eq 0 ]]; then
+        printf "${MAGENTA}[PROFILE]${RESET} Active Profile: ${BOLD}${MAGENTA}%s${RESET}\n" "${OPTION_PROFILE}"
+    fi
+fi
+export HERMES_HOME
 
 # ---------------------------------------------------------------------------
 # 6. First‑run (or forced) setup
@@ -273,8 +286,24 @@ if [[ "${HERMES_TOP:-0}" -eq 1 ]]; then
 fi
 
 if (( $# )); then
-  log info "Running hermes sub‑command: $*"
-  exec hermes "$@"
+  case "${1:-}" in
+    mcp)
+      shift
+      log info "Running Hermes MCP Manager ..."
+      python3 "${PORTABLE_ROOT}/tools/mcp/mcp_manager.py" "$@"
+      exit $?
+      ;;
+    profile)
+      shift
+      log info "Running Hermes Profile Manager ..."
+      python3 "${PORTABLE_ROOT}/tools/profiles/profile_manager.py" "$@"
+      exit $?
+      ;;
+    *)
+      log info "Running hermes sub‑command: $*"
+      exec hermes "$@"
+      ;;
+  esac
 fi
 
 # ---------------------------------------------------------------------------

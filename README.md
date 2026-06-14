@@ -5,8 +5,10 @@ A fully self-contained, "zero-install" distribution of the Nous Research Hermes 
 ## Key Features
 
 - **Zero Host Pollution**: Everything stays inside the folder. No global environment variables or registry changes.
-- **Independence**: Downloads and bundles its own runtimes (Python 3.11, Node.js 22, uv package manager).
+- **Independence**: Downloads and bundles its own runtimes (Python 3.14, Node.js 24, uv package manager).
 - **Privacy by Default**: API keys, chat sessions, and memories stored locally in the `data/` directory.
+- **Auto-MCP Manager**: Simplified interface to download and "plug in" new Model Context Protocol servers directly into the portable environment.
+- **Multi-Agent Orchestration**: Support for running multiple "clones" of Hermes with different `SOUL.md` profiles from the same portable root.
 - **Encryption Ready**: Built-in AES-256 encryption for sensitive files (API keys, sessions, config).
 - **Hardware Token Support**: Optional Yubikey integration for secure, passwordless authentication.
 - **Multi-Platform**: Works on Windows, macOS (Intel/Apple Silicon), and Linux (x86/ARM).

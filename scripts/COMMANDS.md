@@ -44,6 +44,29 @@ These are the commands you type in your terminal / PowerShell.
 | `./launch.sh hermes config` | View config |
 | `./launch.sh hermes update` | Update Hermes |
 
+### Multi-Agent Orchestration & Profiles
+
+Hermes supports multiple isolated profiles. Each profile has its own `SOUL.md`, `config.yaml`, and `.env`.
+
+| Command | What it does |
+|---------|-------------|
+| `launch.bat /profile <name>` | Start Hermes with a specific profile |
+| `hermes profile list` | List all available profiles |
+| `hermes profile create <name>` | Create a new profile (cloned from default) |
+| `hermes profile delete <name>` | Delete a profile |
+
+### Auto-MCP Manager
+
+Easily manage Model Context Protocol (MCP) servers.
+
+| Command | What it does |
+|---------|-------------|
+| `hermes mcp list` | List installed MCP servers |
+| `hermes mcp available` | List available servers to install |
+| `hermes mcp install <name>` | Download and plug in an MCP server |
+| `hermes mcp add <name> --cmd <cmd>` | Add a custom MCP server |
+| `hermes mcp remove <name>` | Uninstall an MCP server |
+
 ---
 
 ## Reset Scripts (for testing / fresh starts)

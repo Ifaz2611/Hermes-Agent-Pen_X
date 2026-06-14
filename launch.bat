@@ -76,10 +76,11 @@ set "SRC_DIR=%PORTABLE_ROOT%\src"
 set "VENV_DIR=%RUNTIME_DIR%\venv"
 
 :: -------------------------------------------------------------------
-:: 3. Parse arguments (Silent & RAM Disk)
+:: 3. Parse arguments (Silent, RAM Disk, Profile)
 :: -------------------------------------------------------------------
 set "SILENT=0"
 set "USE_RAMDISK=0"
+set "PROFILE_NAME="
 
 :parse_args
 if "%~1"=="" goto :args_done
@@ -93,7 +94,23 @@ if /I "%~1"=="/ramdisk" (
     shift
     goto :parse_args
 )
+if /I "%~1"=="/profile" (
+    set "PROFILE_NAME=%~2"
+    if not defined PROFILE_NAME (
+        call :MkErr "Profile name not specified after /profile."
+    )
+    shift
+    shift
+    goto :parse_args
+)
 :args_done
+
+:: Update HERMES_HOME if profile is specified
+set "HERMES_HOME=%PORTABLE_ROOT%\data"
+if defined PROFILE_NAME (
+    set "HERMES_HOME=%PORTABLE_ROOT%\data\profiles\%PROFILE_NAME%"
+    if %SILENT%==0 echo %BRM%[PROFILE]%RST% Active Profile: %MAG%!PROFILE_NAME!%RST%
+)
 
 :: -------------------------------------------------------------------
 :: 4. First‑run runtime download (Always against USB root)
@@ -183,6 +200,30 @@ if not "%~1"=="" (
     :: Detect leading “hermes” token and drop it
     if /I "%~1"=="hermes" (
         shift
+        if /I "%~1"=="mcp" (
+            shift
+            set "MCP_ARGS="
+            :collect_mcp
+            if "%~1"=="" goto :mcp_done
+            set "MCP_ARGS=!MCP_ARGS! %~1"
+            shift
+            goto :collect_mcp
+            :mcp_done
+            python "%PORTABLE_ROOT%\tools\mcp\mcp_manager.py" !MCP_ARGS!
+            exit /b %ERRORLEVEL%
+        )
+        if /I "%~1"=="profile" (
+            shift
+            set "PROF_ARGS="
+            :collect_prof
+            if "%~1"=="" goto :prof_done
+            set "PROF_ARGS=!PROF_ARGS! %~1"
+            shift
+            goto :collect_prof
+            :prof_done
+            python "%PORTABLE_ROOT%\tools\profiles\profile_manager.py" !PROF_ARGS!
+            exit /b %ERRORLEVEL%
+        )
         :collect_forward
         if "%~1"=="" goto :forward_done
         set "ARGS=!ARGS! %~1"
