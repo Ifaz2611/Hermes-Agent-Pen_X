@@ -10,7 +10,12 @@ import shutil
 from pathlib import Path
 
 def get_portable_root():
-    return Path(os.environ.get('PORTABLE_ROOT', Path.cwd()))
+    env = os.environ.get('PORTABLE_ROOT')
+    if env:
+        return Path(env)
+    # Fall back to the repo root derived from this file's location instead of
+    # the current working directory (launchers may invoke us from anywhere).
+    return Path(__file__).resolve().parents[2]
 
 def get_data_dir():
     return get_portable_root() / 'data'
@@ -40,21 +45,29 @@ def create_profile(name):
 
     profile_path.mkdir(parents=True, exist_ok=True)
     
-    # Copy default files if they exist in data root
+    # Copy default files if they exist in data root.
+    # soul.md is matched case-insensitively (SOUL.md on Windows, soul.md on Linux).
     data_dir = get_data_dir()
-    files_to_copy = ['.env', 'config.yaml', 'SOUL.md']
-    
+    files_to_copy = ['.env', 'config.yaml']
+    soul_src = None
+    for candidate in ('soul.md', 'SOUL.md', 'Soul.md'):
+        if (data_dir / candidate).exists():
+            soul_src = data_dir / candidate
+            break
+
     for f in files_to_copy:
         src = data_dir / f
         if src.exists():
             shutil.copy2(src, profile_path / f)
             print(f"Copied {f} to profile '{name}'")
-        else:
-            # Create a basic SOUL.md if it doesn't exist
-            if f == 'SOUL.md':
-                with open(profile_path / f, 'w', encoding='utf-8') as sf:
-                    sf.write(f"# {name} SOUL\n\nYou are a helpful AI assistant named {name}.\n")
-                print(f"Created default SOUL.md for profile '{name}'")
+    if soul_src is not None:
+        shutil.copy2(soul_src, profile_path / soul_src.name)
+        print(f"Copied {soul_src.name} to profile '{name}'")
+    else:
+        # Create a basic soul.md if none exists
+        with open(profile_path / 'soul.md', 'w', encoding='utf-8') as sf:
+            sf.write(f"# {name} SOUL\n\nYou are a helpful AI assistant named {name}.\n")
+        print(f"Created default soul.md for profile '{name}'")
 
     print(f"Profile '{name}' created at {profile_path}")
 

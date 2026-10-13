@@ -1,430 +1,99 @@
-# Hermes Agent Pendrive_X - Security & Encryption Guide
+# Security and Vault Guide
 
-## Overview
+This guide documents the security utilities included in Hermes Agent Pendrive_X. Vault encryption is optional; it does not replace operating-system security, secure backups, or careful credential handling.
 
-Hermes Agent Pendrive_X now includes built-in encryption for your data vault and optional hardware token support via Yubikeys. This guide covers all security features and how to use them.
+## Current capabilities
 
-## Features
+- Password-based encryption and decryption of selected files in a data directory.
+- Vault status reporting.
+- YubiKey availability/status checks and a helper that invokes YubiKey PIN setup.
+- Automatic vault-unlock helpers used by the platform launchers.
 
-### 1. AES-256 Encrypted Data Vault
+**Important YubiKey limitation:** YubiKey is not currently part of the vault key derivation or unlock flow. The `--hardware-token` option records a setting in `.vault`; it does not make vault access passwordless or require a YubiKey. Do not treat the token flag as an additional cryptographic factor.
 
-**What it does:**
-- Encrypts all sensitive files in your `data/` folder (API keys, sessions, config)
-- Uses AES-256 encryption with PBKDF2 key derivation
-- Protects against data theft if your USB drive is lost or stolen
+## What is encrypted
 
-**Benefits:**
-- **Privacy**: API keys and session data remain encrypted at rest
-- **Portability**: Safely carry sensitive data on USB drives
-- **Zero-Knowledge**: Only you have the encryption password
-- **Standards-Based**: Uses industry-standard cryptography (Python `cryptography` library)
+When you lock a vault, the security module processes matching files:
 
-### 2. Yubikey & Hardware Token Support
+- Root-level `.env`, `config.yaml`, `config.yml`, and `soul.md` (case-insensitive name match).
+- Files beneath `sessions/`, `memory/`, and `logs/`.
 
-**What it does:**
-- Integrates with Yubikey devices for passwordless authentication
-- Supports multiple authentication modes: FIDO2, OTP, PIV
-- Can serve as a second factor for vault unlocking
+The content is replaced in place by a UTF-8 JSON envelope containing the salt and Fernet token. The original filename remains unchanged. The `.vault` metadata file is not itself encrypted. Files outside the listed names and directories are not automatically protected.
 
-**Benefits:**
-- **Convenience**: No password to remember
-- **Security**: Hardware-backed keys resistant to phishing and malware
-- **Portability**: Same physical key for your portable agent
-- **Flexibility**: Fall back to password if key not available
+Before encrypting, make a backup and confirm that the data directory contains only the files you intend to protect. Never run tests against your only copy of important data.
 
-## Installation
+## Requirements
 
-### Basic Installation
+The security module is under `src/security/`. For direct use from the repository root, make `src/` available on Python’s module path.
 
-The security module is included by default. Install the required dependencies:
-
+**macOS/Linux:**
 ```bash
-# For encryption support (required)
-pip install cryptography>=41.0.0
-
-# For Yubikey support (optional but recommended)
-pip install yubikey-manager>=5.0.0
+PYTHONPATH=src python -m security --help
 ```
 
-Or use the setup script which includes these by default:
-
-```bash
-# Windows
-.\setup-windows.ps1
-
-# macOS/Linux
-./setup-unix.sh
+**Windows PowerShell:**
+```powershell
+$env:PYTHONPATH = "$PWD\src"
+python -m security --help
 ```
 
-## Quick Start
+The `cryptography` package is required for encryption and decryption. YubiKey detection additionally needs `ykman` (provided by YubiKey Manager). The project setup scripts install the portable runtime dependencies.
 
-### Encrypt Your Data Vault
+## Encrypt, inspect, and decrypt
 
-```bash
-# Using the launcher (recommended)
-hermes security encrypt data/
+Run commands from the repository root after setting `PYTHONPATH` as above:
 
-# Or manually via CLI
+```text
 python -m security encrypt data/
-```
-
-You'll be prompted to enter a master password (minimum 8 characters).
-
-### Decrypt Your Data Vault
-
-When you next start Hermes after encryption, it will automatically prompt you:
-
-```
-🔐 Hermes Agent vault detected.
-Enter encryption password: ••••••••
-✓ Vault unlocked successfully!
-```
-
-Or decrypt manually:
-
-```bash
+python -m security status data/
 python -m security decrypt data/
 ```
 
-### Check Vault Status
+Encryption prompts for a password and confirmation if `--password` is omitted; the interactive prompt requires at least eight characters. Decryption prompts for the existing password if `--password` is omitted. Prefer interactive prompts over putting passwords in command arguments, which can expose them in shell history or process listings. Use a strong, unique password.
 
-```bash
-hermes security status data/
+The launchers check the selected data directory and invoke the unlock helper when the vault metadata indicates that it is locked. Keep an independent backup of the password: there is no password reset or recovery mechanism.
 
-# Output:
-# Vault Status (data/):
-#   - Encrypted: true
-#   - Encrypted files: 12
-#   - Total size: 2.45 MB
-#   - Hardware token enabled: false
-```
+## Cryptographic format
 
-## Yubikey Setup
+- **Encryption:** Fernet authenticated symmetric encryption.
+- **Key derivation:** PBKDF2-HMAC-SHA256, 100,000 iterations.
+- **Salt:** 16 random bytes per encrypted file.
+- **Envelope:** JSON containing a marker, version, salt, token, and original filename.
 
-### Prerequisites
+Encrypted files keep their original names and are written in place. Do not assume a `.enc` extension is created by the vault CLI.
 
-1. **Physical Yubikey device** (Yubikey 4/5/5C/5Ci or compatible)
-2. **ykman installed** (included in setup):
-   ```bash
-   pip install yubikey-manager
-   ```
+## YubiKey utilities
 
-### Setup Yubikey for Authentication
+Check device detection and status:
 
-#### Step 1: Enable FIDO2 on Yubikey
-
-```bash
+```text
+python -m security token status
 python -m security yubikey setup --mode fido2 --setup-pin
 ```
 
-This will:
-- Detect your connected Yubikey
-- Display device information
-- Optionally set up a PIN for additional security
+Supported mode labels are `otp`, `fido2`, and `piv`. Device detection depends on the `ykman` command being available. The PIN helper delegates to YubiKey Manager; verify its output and device configuration yourself. These utilities do not currently bind the YubiKey to vault encryption.
 
-#### Step 2: Enable Hardware Token in Launcher
+## Backups and recovery
 
-When encrypting your vault, use the `--hardware-token` flag:
+1. Keep at least one separate backup of important data.
+2. Store encrypted backups separately from the encryption password.
+3. Test decryption from a backup before depending on it.
+4. Do not sync plaintext credentials to an untrusted destination.
 
-```bash
-hermes security encrypt data/ --hardware-token
-```
+If you forget the password, the encrypted files cannot be recovered by this project. Restore from a known-good backup. Do not delete encrypted data until a restored copy has been verified.
 
-This configures the launcher to:
-- Check for a connected Yubikey on startup
-- Use Yubikey for vault authentication (if available)
-- Fall back to password if Yubikey not connected
-
-#### Step 3: Test Authentication
-
-```bash
-python -m security token status --type yubikey
-
-# Output:
-# Token Status (yubikey):
-#   - token_type: yubikey
-#   - device_info:
-#       device: Yubikey
-#       mode: fido2
-#       connected: true
-#       serial: XXXXXXXX
-#       firmware_version: 5.2.7
-#   - is_available: true
-```
-
-## Usage Examples
-
-### Example 1: Basic Encryption (Password Only)
-
-```bash
-# Encrypt vault
-$ hermes security encrypt data/
-Encrypting vault at: data/
-Enter encryption password: ••••••••
-Confirm password: ••••••••
-
-✓ Vault encrypted successfully!
-  - Encrypted files: 8
-  - Total size: 1.23 MB
-```
-
-Then when you run Hermes, it will automatically ask for the password:
-
-```bash
-$ ./launch.bat
-🔐 Hermes Agent vault detected.
-Enter encryption password: ••••••••
-✓ Vault unlocked successfully!
-
-Loading Hermes Chat...
-```
-
-### Example 2: Hardware Token + Password (Recommended)
-
-```bash
-# Setup Yubikey
-$ python -m security yubikey setup --mode fido2 --setup-pin
-✓ Yubikey detected!
-  - device: Yubikey
-  - mode: fido2
-  - connected: true
-  - serial: 12345678
-  - firmware_version: 5.2.7
-
-# Encrypt with hardware token support
-$ hermes security encrypt data/ --hardware-token
-Encrypting vault at: data/
-Enter encryption password: ••••••••
-Confirm password: ••••••••
-
-✓ Vault encrypted successfully!
-  - Encrypted files: 8
-  - Total size: 1.23 MB
-  - Hardware token enabled: true
-```
-
-Now on startup, Hermes will:
-1. Check for connected Yubikey
-2. If found: Use Yubikey for authentication (just touch the key)
-3. If not found: Fall back to password prompt
-
-### Example 3: Decrypt Vault for Backup
-
-```bash
-$ python -m security decrypt data/
-Decrypting vault at: data/
-Enter encryption password: ••••••••
-
-✓ Vault decrypted successfully!
-  - Encrypted files: 8
-  - Total size: 1.23 MB
-```
-
-All `.env`, sessions, and configs are now in plaintext. You can:
-- Back up the decrypted files
-- Transfer to another machine
-- Re-encrypt when done
-
-## Technical Details
-
-### Encryption Algorithm
-
-- **Cipher**: Fernet (symmetric encryption)
-- **Key Derivation**: PBKDF2 with SHA-256
-- **Iterations**: 100,000
-- **Salt**: 16 random bytes per encryption
-- **Key Length**: 256 bits (32 bytes)
-
-### Files Protected by Default
-
-The following files are encrypted:
-- `.env` - API keys and secrets
-- `config.yaml` - Configuration
-- `soul.md` - Agent personality
-- `gateway.pid` - Process information
-
-The following directories are encrypted recursively:
-- `sessions/` - Chat history
-- `memory/` - Persistent memories
-- `logs/` - Gateway and application logs
-
-### Storage Format
-
-Encrypted files are stored as JSON with:
-
-```json
-{
-  "ciphertext": "gAAAAABlMz...",
-  "salt": "rnd3xyz..."
-}
-```
-
-Original file is replaced with `.enc` extension (e.g., `.env.enc`).
-
-### Vault Configuration
-
-A `.vault` file in the data directory tracks encryption status:
-
-```json
-{
-  "encrypted": true,
-  "use_hardware_token": false,
-  "version": "1.0"
-}
-```
-
-## Security Considerations
-
-### Password Best Practices
-
-1. **Use a strong password** (16+ characters recommended)
-   - Mix uppercase, lowercase, numbers, and symbols
-   - Avoid dictionary words and personal information
-   - Example: `HeRm3s@P0rt@bl3#2024!`
-
-2. **Never share your password**
-   - Not even with Nous Research support
-   - Hermes developers cannot recover encrypted data
-
-3. **Remember or backup your password**
-   - Lost password = lost data
-   - Consider using a password manager
-
-### Yubikey Best Practices
-
-1. **Use a PIN on your Yubikey** (set during setup)
-   - Protects key from casual physical access
-   - Recommended PIN: 4-8 random digits
-
-2. **Register multiple Yubikeys** (if available)
-   - Provides backup if one is lost
-   - Same authentication works on all registered keys
-
-3. **Keep your Yubikey safe**
-   - Treat it like a physical door key
-   - Don't lose it or leave it unattended
-
-4. **Document your Yubikey serial**
-   - Write it down and store safely
-   - Helps identify your key if multiple are registered
-
-### Data Recovery
-
-If you forget your password:
-
-1. **With Yubikey backup**: Use the Yubikey to access the vault
-   ```bash
-   python -m security decrypt data/ --hardware-token
-   ```
-
-2. **Without backup**: You'll need to:
-   - Delete the encrypted `.enc` files
-   - Restore from a backup (if available)
-   - Note: There is no password recovery
+The S3 utility can encrypt files before uploading, but it does not provide key management or recovery. Review its options and destination before use; AWS credentials should come from a protected AWS profile or the standard AWS credential provider chain, not from source code.
 
 ## Troubleshooting
 
-### "Failed to unlock vault (incorrect password?)"
+| Problem | Check |
+| --- | --- |
+| `No module named security` | Set `PYTHONPATH` to this repository’s `src/` directory. |
+| Missing `cryptography` | Install project dependencies or run the platform setup script. |
+| Unlock fails | Check the password and make a backup copy of the encrypted files before retrying. |
+| YubiKey not detected | Confirm `ykman` is installed, connect the device, and run `ykman list`. |
+| Permission error | Confirm the data directory is writable and not locked by another process. |
 
-- Check that password is entered correctly (case-sensitive)
-- Try copying password from password manager if available
-- If using Yubikey, ensure it's connected and charged
+## Reporting a vulnerability
 
-### "No Yubikey detected"
-
-- Check USB connection (try different USB port)
-- Run: `ykman list` to verify detection
-- Restart Hermes launcher
-- Try Yubikey Manager GUI to verify device works
-
-### "Permission denied" when encrypting/decrypting
-
-- Check that `data/` directory is not read-only
-- On Unix: `chmod -R 755 data/`
-- On Windows: Right-click folder → Properties → Security
-
-### "Module not found" errors
-
-Reinstall dependencies:
-
-```bash
-# Windows
-.\setup-windows.ps1 -Root %CD%
-
-# Unix
-./setup-unix.sh
-```
-
-Or manually:
-```bash
-pip install cryptography>=41.0.0 yubikey-manager>=5.0.0
-```
-
-## Advanced Configuration
-
-### Disable Hardware Token Requirement
-
-If your Yubikey is lost but you know the password:
-
-```bash
-# Decrypt with password only
-python -m security decrypt data/
-
-# Encrypt without hardware token requirement
-python -m security encrypt data/
-```
-
-### Rotate Encryption Password
-
-1. Decrypt vault:
-   ```bash
-   python -m security decrypt data/
-   ```
-
-2. Re-encrypt with new password:
-   ```bash
-   python -m security encrypt data/
-   ```
-
-### Export Encrypted Files
-
-All encrypted files use standard JSON format and can be:
-- Backed up to cloud storage (still encrypted)
-- Transferred between machines
-- Inspected for audit purposes
-
-```bash
-# Backup encrypted vault
-cp -r data/*.enc backup/
-
-# Restore from backup
-cp backup/*.enc data/
-```
-
-## Reporting Security Issues
-
-If you discover a security vulnerability, **please do not** file a public GitHub issue.
-
-Instead:
-1. Email: security@nous-research.com (replace with actual security contact)
-2. Include: Affected component, reproduction steps, potential impact
-3. Allow 48 hours for acknowledgment
-
-## Additional Resources
-
-- [Cryptography Library Documentation](https://cryptography.io/)
-- [Yubikey Documentation](https://docs.yubico.com/)
-- [OWASP Password Guidelines](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html)
-- [FIDO2 Security](https://fidoalliance.org/)
-
-## Support
-
-For issues or questions:
-1. Check this guide's Troubleshooting section
-2. Review vault status: `hermes security status data/`
-3. Check logs: `hermes doctor`
-4. Contact support with error messages and logs
-
----
-
-
+Do not publish exploitable details in a public issue. Contact the repository maintainers through a private security channel listed in the repository settings or project site. Include the affected component, impact, and safe reproduction steps; do not include real credentials or private user data.

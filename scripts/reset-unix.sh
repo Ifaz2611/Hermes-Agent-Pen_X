@@ -99,9 +99,18 @@ fi
 echo ""
 echo "The following folders will be DELETED:"
 for f in "${FOLDERS[@]}"; do
-    # Show size safely; fallback to 0 on error
-    SIZE=$(du -sb "$f" 2>/dev/null | cut -f1 || echo 0)
-    HUMAN=$(numfmt --to=iec "$SIZE")
+    # Show size portably (macOS lacks GNU du -b and numfmt).
+    if du -sb "$f" >/dev/null 2>&1; then
+        SIZE=$(du -sb "$f" 2>/dev/null | cut -f1 || echo 0)
+    else
+        SIZE=$(du -sk "$f" 2>/dev/null | cut -f1 || echo 0)
+        SIZE=$((SIZE * 1024))
+    fi
+    if command -v numfmt >/dev/null 2>&1; then
+        HUMAN=$(numfmt --to=iec "$SIZE" 2>/dev/null || echo "${SIZE}B")
+    else
+        HUMAN="$(awk "BEGIN {printf \"%.1f MB\", $SIZE/1048576}")"
+    fi
     printf "  - %s (%s)\n" "$f" "$HUMAN"
 done
 
@@ -136,7 +145,7 @@ log "Reset completed successfully."
 # --------------------[ Post‑reset instructions ]-----------------------------
 echo ""
 echo "========================================"
-echo "   Reset Complete (${MODE^^})"
+echo "   Reset Complete ($(printf '%s' "$MODE" | tr '[:lower:]' '[:upper:]'))"
 echo "========================================"
 if [[ "$MODE" == "soft" ]]; then
     echo "Next step: run ./launch.sh to re‑download runtimes."

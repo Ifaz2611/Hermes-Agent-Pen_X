@@ -1,4 +1,4 @@
-# Hermes Agent Portable - Vault Unlock Helper
+﻿# Hermes Agent Portable - Vault Unlock Helper
 # This script integrates encryption/decryption into the launch process
 
 param (
@@ -52,30 +52,31 @@ function Unlock-DataVault {
     }
 }
 
-# Main execution
+# Main execution (uses exit codes so launch.bat errorlevel checks work)
 if (-not (Test-Path $DataDir)) {
     Write-Host "Data directory not found: $DataDir" -ForegroundColor Yellow
-    return $true
+    exit 0
 }
 
 if (Test-VaultEncrypted $DataDir) {
     Write-Host ""
     $unlocked = Unlock-DataVault $DataDir $PythonExe $UseHardwareToken
-    
+
     if (-not $unlocked) {
         Write-Host ""
         Write-Host "Cannot proceed without unlocking the vault." -ForegroundColor Red
         $retry = Read-Host "Retry? (y/n)"
         if ($retry -eq 'y') {
-            Unlock-DataVault $DataDir $PythonExe $UseHardwareToken
-        } else {
-            return $false
+            $unlocked = Unlock-DataVault $DataDir $PythonExe $UseHardwareToken
+        }
+        if (-not $unlocked) {
+            exit 1
         }
     }
-    
+
     Write-Host ""
-    return $true
+    exit 0
 } else {
     # Vault not encrypted, proceed normally
-    return $true
+    exit 0
 }

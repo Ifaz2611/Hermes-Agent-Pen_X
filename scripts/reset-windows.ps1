@@ -1,4 +1,4 @@
-<# 
+﻿<# 
 .SYNOPSIS
     Hermes Pendrive_X – Reset Script (Windows)
 
@@ -37,7 +37,6 @@ param(
 # -------------------------------------------------------------------------
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'          # Fail fast on any error
-$PSNativeCommandAlias = $true             # Keep native cmd aliases (optional)
 
 # -------------------------------------------------------------------------
 # Constants & helpers
@@ -119,23 +118,26 @@ if ($processes) {
 $foldersToDelete = @()
 
 # Helpers for path building (avoids escaping headaches)
+# NOTE: scriptblocks get their own scope, so the list lives in script: scope.
+$script:foldersToDelete = @()
 $AddFolder = {
     param($PathPart)
     $full = Join-Path $Root $PathPart
-    if (Test-Path $full) { $foldersToDelete += $full }
+    if (Test-Path $full) { $script:foldersToDelete += $full }
 }
 
 # Runtime & source – always present in the list
-$AddFolder '.cache\runtimes'
-$AddFolder 'src\hermes-agent'
+& $AddFolder '.cache\runtimes'
+& $AddFolder 'src\hermes-agent'
 
 if ($Mode -eq 'full') {
-    $AddFolder 'data'          # Whole data directory
-    $AddFolder '.cache'        # Cache root (contains runtimes etc.)
+    & $AddFolder 'data'          # Whole data directory
+    & $AddFolder '.cache'        # Cache root (contains runtimes etc.)
 }
 
 # Remove accidental duplicates – harmless but tidy
-$foldersToDelete = $foldersToDelete | Sort-Object -Unique
+$script:foldersToDelete = @($script:foldersToDelete | Sort-Object -Unique)
+$foldersToDelete = $script:foldersToDelete
 if (-not $foldersToDelete) {
     Write-Log "❌ No folders to delete – aborting." Red
     exit 1
@@ -148,10 +150,11 @@ Write-Host ''
 Write-Host 'The following folders will be DELETED:' -ForegroundColor Yellow
 
 foreach ($folder in $foldersToDelete) {
-    # ---- size (fast approximation) ----
+    # ---- size (recursive approximation; DirectoryInfo has no .Length) ----
     try {
-        $dirInfo = Get-Item -LiteralPath $folder -ErrorAction Stop
-        $sizeBytes = $dirInfo.Length               # total bytes on the directory
+        $sizeBytes = (Get-ChildItem -LiteralPath $folder -Recurse -File -ErrorAction Stop |
+            Measure-Object -Property Length -Sum).Sum
+        if (-not $sizeBytes) { $sizeBytes = 0 }
         $sizeMB = [math]::Round($sizeBytes / 1MB, 1)
     } catch {
         $sizeMB = '??'                               # could be locked or hidden
@@ -204,7 +207,7 @@ Write-Host '========================================' -ForegroundColor Green
 if ($Mode -eq 'soft') {
     Write-Host ''
     Write-Host "Next step: run .\launch.bat to re‑download runtimes" -ForegroundColor Cyan
-    Write-Host "Your API keys and config are still saved in $Root\data\" -ForegroundColor Cyan
+    Write-Host "Your API keys and config are still saved in $Root\data" -ForegroundColor Cyan
 } else {
     Write-Host ''
     Write-Host "Next step: run .\launch.bat for a completely fresh start" -ForegroundColor Cyan

@@ -1,4 +1,4 @@
-<# =============================================================================
+﻿<# =============================================================================
 # Hermes Pendrive_X – Windows Portable Runtime Setup
 # =============================================================================
 # Downloads and extracts:
@@ -243,8 +243,15 @@ function Ensure-BinLink {
     )
     $target = Join-Path $BinDir $LinkName
     if (Test-Path $target) { Remove-Item $target -Force }
-    New-Item -ItemType SymbolicLink -Path $target -Target $SourceBinPath | Out-Null
-    Log-Entry INFO "Linked $LinkName → $SourceBinPath"
+    try {
+        New-Item -ItemType SymbolicLink -Path $target -Target $SourceBinPath -ErrorAction Stop | Out-Null
+        Log-Entry INFO "Linked $LinkName → $SourceBinPath"
+    }
+    catch {
+        # Developer Mode / admin rights missing (typical on USB sticks): copy instead.
+        Copy-Item -LiteralPath $SourceBinPath -Destination $target -Force
+        Log-Entry WARN "Symlink unavailable for $LinkName – copied file instead."
+    }
 }
 
 # -------------------------------------------------------------------------
@@ -254,13 +261,9 @@ function Write-Manifest {
     param(
         [hashtable] $ComponentInfo
     )
-    $json = @()
-    foreach ($k in $ComponentInfo.Keys) {
-        $v = $ComponentInfo[$k]
-        $json += @{ name=$k; version=$v.version; url=$v.url } | ConvertTo-Json -Depth 2
-    }
     $manifestPath = Join-Path $RuntimeDir 'manifest.json'
-    $json | ConvertFrom-Json | ConvertTo-Json -Depth 5 | Set-Content -Path $manifestPath -Encoding utf8
+    $obj = @{ generated_at = (Get-Date -UFormat "%Y-%m-%dT%H:%M:%SZ"); versions = $ComponentInfo }
+    $obj | ConvertTo-Json -Depth 5 | Set-Content -Path $manifestPath -Encoding utf8
     Log-Entry INFO "Wrote manifest to $manifestPath"
 }
 
@@ -272,6 +275,7 @@ function Read-Manifest {
     if (Test-Path $manifestPath) {
         try {
             $json = Get-Content $manifestPath -Raw | ConvertFrom-Json
+            if ($json.versions) { return $json.versions }
             return $json
         } catch {
             Log-Entry WARN "Failed to parse manifest.json – assuming empty."
@@ -279,6 +283,12 @@ function Read-Manifest {
         }
     }
     return $null
+}
+
+if ($DryRun) {
+    Log-Entry INFO "[DRY-RUN] Would install: Python $($Versions['python'].version), Node $($Versions['node'].version), uv $($Versions['uv'].version), Hermes source."
+    Log-Entry INFO "[DRY-RUN] No changes were made. Re-run without -DryRun to install."
+    return
 }
 
 $CurrentManifest = Read-Manifest
@@ -293,8 +303,9 @@ function Install-Python {
         return
     }
     $archive = Join-Path $RuntimeDir "python.$($info.ext)"
+    $cpuArch = if ($info.arch -eq 'x64') { 'x86_64' } else { $info.arch }
     $dest = Join-Path $RuntimeDir 'python'
-    Download-File -Url "$($info.url)/$($info.tag)/cpython-$($info.version)-$($info.arch)-unknown-windows-msvc-install_only.$($info.ext)" -OutFile $archive
+    Download-File -Url "$($info.url)/$($info.tag)/cpython-$($info.version)-$cpuArch-pc-windows-msvc-install_only.$($info.ext)" -OutFile $archive
     Extract-Archive -Archive $archive -Destination $dest
     Ensure-BinLink -SourceBinPath (Join-Path $dest 'python.exe') -LinkName 'python.exe'
     Log-Entry INFO "Python $($info.version) installed."
@@ -314,7 +325,22 @@ function Install-Node {
     $dest  = Join-Path $RuntimeDir 'node'
     Download-File -Url $info.url -OutFile $archive
     Extract-Archive -Archive $archive -Destination $dest
-    Ensure-BinLink -SourceBinPath (Join-Path $dest 'node.exe') -LinkName 'node.exe'
+    $nodeExe = Join-Path $dest 'node.exe'
+    if (-not (Test-Path $nodeExe)) {
+        $nested = Get-ChildItem $dest -Recurse -Filter 'node.exe' | Select-Object -First 1
+        if ($nested) {
+            Get-ChildItem $dest -Directory | Select-Object -First 1 | ForEach-Object {
+                Get-ChildItem $_.FullName | Move-Item -Destination $dest -Force
+                Remove-Item $_.FullName -Force
+            }
+            $nodeExe = Join-Path $dest 'node.exe'
+        }
+    }
+    if (Test-Path $nodeExe) {
+        Ensure-BinLink -SourceBinPath $nodeExe -LinkName 'node.exe'
+    } else {
+        Log-Entry WARN "node.exe not found after extraction."
+    }
     Log-Entry INFO "Node.js $($info.version) installed."
 }
 Install-Node
@@ -453,8 +479,8 @@ function Install-PythonDeps {
     $uvExe      = Join-Path $RuntimeDir 'uv\uv.exe'
     $srcPackage = Join-Path $SrcDir 'hermes-agent'
 
-    # Build the -e argument with the [all] extra (works for pip)
-    $editableArgs = @("-e", "$srcPackage", "[all]")
+    # Build the -e argument with the [all] extra (single pip spec)
+    $editableArgs = @("-e", "$srcPackage[all]")
 
     Log-Entry INFO "Installing core Python deps (uv pip preferred)..."
     $pipCmd = {
@@ -467,7 +493,7 @@ function Install-PythonDeps {
         Log-Entry WARN "uv pip failed – falling back to pip."
         # Ensure pip is present (uv's venv always bundles it)
         $pipCmd = {
-            & $venvPython -m pip install -e $srcPackage "[all]"
+            & $venvPython -m pip install -e "$srcPackage[all]"
         }
         Invoke-WithLog -Label "pip install (fallback)" -ScriptBlock $pipCmd
     }

@@ -4,9 +4,6 @@ Sync the data/ folder to AWS S3 with optional end-to-end encryption using the re
 EncryptionManager (PBKDF2 + Fernet). Designed as a minimal, auditable tool — adjust for
 production (retries, parallelism, multipart uploads) as needed.
 
-Usage:
-  python tools\sync\s3_sync.py --bucket my-bucket --prefix hermes-backup --encrypt --password "passphrase"
-
 Notes:
 - Requires boto3 installed (pip install boto3)
 - Encryption uses src/security/crypto.py EncryptionManager to create .enc JSON files and uploads those.
@@ -14,14 +11,11 @@ Notes:
 import argparse
 import os
 from pathlib import Path
-import boto3
-from botocore.exceptions import ClientError
 import tempfile
-import shutil
 import sys
 
 # Import repository encryption utilities
-repo_root = Path(__file__).resolve().parents[3]
+repo_root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(repo_root / 'src'))
 
 try:
@@ -29,6 +23,13 @@ try:
 except Exception as e:
     print(f"Failed to import EncryptionManager: {e}")
     raise
+
+
+def _s3_key(prefix: str, rel: str) -> str:
+    # S3 keys always use forward slashes, even on Windows.
+    parts = [p for p in (prefix or "").replace("\\", "/").split("/") if p]
+    parts += [p for p in rel.replace("\\", "/").split("/") if p and p != ".."]
+    return "/".join(parts)
 
 
 def parse_args():
@@ -44,6 +45,11 @@ def parse_args():
 
 
 def s3_client(profile=None):
+    try:
+        import boto3
+    except ImportError:
+        print("boto3 is required for S3 sync. Install it with: pip install boto3")
+        raise SystemExit(2)
     if profile:
         session = boto3.Session(profile_name=profile)
         return session.client('s3')
@@ -54,6 +60,11 @@ def upload_file(s3, bucket, key, local_path, dry_run=False):
     print(f"Uploading {local_path} -> s3://{bucket}/{key}")
     if dry_run:
         return True
+    try:
+        from botocore.exceptions import ClientError
+    except ImportError:
+        print("botocore is required for S3 sync. Install it with: pip install boto3")
+        return False
     try:
         s3.upload_file(str(local_path), bucket, key)
         return True
@@ -94,10 +105,10 @@ def main():
                 except Exception as e:
                     print(f"Encryption failed for {p}: {e}")
                     continue
-                s3_key = os.path.join(args.prefix, str(rel) + '.enc').lstrip('/\\')
+                s3_key = _s3_key(args.prefix, str(rel) + '.enc')
                 upload_file(s3, args.bucket, s3_key, enc_path, dry_run=args.dry_run)
             else:
-                s3_key = os.path.join(args.prefix, str(rel)).lstrip('/\\')
+                s3_key = _s3_key(args.prefix, str(rel))
                 upload_file(s3, args.bucket, s3_key, p, dry_run=args.dry_run)
 
     print("Sync complete")

@@ -50,13 +50,13 @@ set "BGB=%ESC%[44m%ESC%[97m"
 set "BGC=%ESC%[46m%ESC%[30m"
 
 :: -------------------------------------------------------------------
-:: 0b. Centralised error printer
+:: 0b. Centralised error printer (subroutine - must be skipped on fallthrough)
 :: -------------------------------------------------------------------
+goto :after_MkErr
 :MkErr
-setlocal & set "msg=%~1"
-endlocal & set "msg=%msg%"
-echo %RED%[ERROR]%RST% %msg%
+echo %RED%[ERROR]%RST% %~1
 exit /b 1
+:after_MkErr
 :: -------------------------------------------------------------------
 
 :: -------------------------------------------------------------------
@@ -195,48 +195,39 @@ if not exist "%SRC_DIR%\hermes-agent" (
 
 :: -------------------------------------------------------------------
 :: 7. Argument forwarding (handles “hermes setup” pattern)
+:: NOTE: no GOTO labels inside parenthesised blocks - batch cannot handle it.
 :: -------------------------------------------------------------------
+set "ARGS="
 if not "%~1"=="" (
-    :: Detect leading “hermes” token and drop it
     if /I "%~1"=="hermes" (
         shift
-        if /I "%~1"=="mcp" (
-            shift
-            set "MCP_ARGS="
-            :collect_mcp
-            if "%~1"=="" goto :mcp_done
-            set "MCP_ARGS=!MCP_ARGS! %~1"
-            shift
-            goto :collect_mcp
-            :mcp_done
-            python "%PORTABLE_ROOT%\tools\mcp\mcp_manager.py" !MCP_ARGS!
-            exit /b %ERRORLEVEL%
-        )
-        if /I "%~1"=="profile" (
-            shift
-            set "PROF_ARGS="
-            :collect_prof
-            if "%~1"=="" goto :prof_done
-            set "PROF_ARGS=!PROF_ARGS! %~1"
-            shift
-            goto :collect_prof
-            :prof_done
-            python "%PORTABLE_ROOT%\tools\profiles\profile_manager.py" !PROF_ARGS!
-            exit /b %ERRORLEVEL%
-        )
-        :collect_forward
-        if "%~1"=="" goto :forward_done
-        set "ARGS=!ARGS! %~1"
-        shift
-        goto :collect_forward
     )
-    set "ARGS=%*"
-    :forward_done
-    if defined ARGS (
-        hermes %ARGS%
+    if /I "%~1"=="mcp" (
+        shift
+        call :RunMcp %*
+        exit /b %ERRORLEVEL%
+    )
+    if /I "%~1"=="profile" (
+        shift
+        call :RunProfile %*
+        exit /b %ERRORLEVEL%
+    )
+    if not "%~1"=="" (
+        call :RunHermes %*
         exit /b %ERRORLEVEL%
     )
 )
+goto :status_detect
+:RunMcp
+python "%PORTABLE_ROOT%\tools\mcp\mcp_manager.py" %*
+exit /b %ERRORLEVEL%
+:RunProfile
+python "%PORTABLE_ROOT%\tools\profiles\profile_manager.py" %*
+exit /b %ERRORLEVEL%
+:RunHermes
+hermes %*
+exit /b %ERRORLEVEL%
+:status_detect
 
 :: -------------------------------------------------------------------
 :: 8. Gather status variables (single block)
@@ -251,30 +242,27 @@ set "GATEWAY_ICON=[ ]"
 set "GATEWAY_COLOR=%DIM%"
 set "GATEWAY_PID="
 
-:: .env sanity check (simple)
+:: .env sanity check - any non-comment KEY=VALUE line means configured
+set "SETUP_STATUS=Not configured"
+set "SETUP_ICON=[ ]"
+set "SETUP_COLOR=%RED%"
 if exist "%HERMES_HOME%\.env" (
-    for /f "usebackq delims=" %%L in ("%HERMES_HOME%\.env") do (
-        if "%%L"=="" goto :dotenv_done
-        if "%%L:~0,1%"=="#" goto :dotenv_done
+    findstr /R /C:"^[A-Z][A-Za-z0-9_]*=" "%HERMES_HOME%\.env" >nul 2>&1
+    if not errorlevel 1 (
         set "SETUP_STATUS=Configured"
         set "SETUP_ICON=[OK]"
         set "SETUP_COLOR=%GRN%"
-        goto :dotenv_done
     )
 )
 :dotenv_done
 
-:: provider & model from config.yaml (PowerShell parses YAML more reliably)
-for %%F in ("%HERMES_HOME%\config.yaml") do (
-    if exist "%%~F" (
-        for /f "usebackq delims=" %%L in (`powershell -NoProfile -Command ^
-            "$h = Get-Content '%%~F' -Raw; $p = [System.Text.RegularExpressions.Regex]::Match($h,'provider\s*:\s*''([^'']*)'''); $m = [System.Text.RegularExpressions.Regex]::Match($h,'default\s*:\s*''([^'']*)'''); ^^^
-            if ($p.Success) { $env:PROVIDER_NAME = $p.Groups[1].Value } ; ^^^
-            if ($m.Success) { $env:MODEL_NAME    = $m.Groups[1].Value } ; ^
-            Write-Host $env:PROVIDER_NAME $env:MODEL_NAME"`) do (
-            if "!PROVIDER_NAME!"=="" set "PROVIDER_NAME=!%%~L!"
-            if "!MODEL_NAME!"==""    set "MODEL_NAME=!%%~L!"
-        )
+:: provider & model from config.yaml (accepts single, double or no quotes)
+set "PROVIDER_NAME="
+set "MODEL_NAME="
+if exist "%HERMES_HOME%\config.yaml" (
+    for /f "tokens=1,* delims==" %%A in ('powershell -NoProfile -Command "$h = Get-Content '%HERMES_HOME%\config.yaml' -Raw; $p = [System.Text.RegularExpressions.Regex]::Match($h,'provider\s*:\s*[''\"\s]*([^''\"\r\n]+)'); $m = [System.Text.RegularExpressions.Regex]::Match($h,'default\s*:\s*[''\"\s]*([^''\"\r\n]+)'); if ($p.Success) { Write-Host ('PROVIDER=' + $p.Groups[1].Value.Trim()) }; if ($m.Success) { Write-Host ('MODEL=' + $m.Groups[1].Value.Trim()) }"') do (
+        if "%%A"=="PROVIDER" set "PROVIDER_NAME=%%B"
+        if "%%A"=="MODEL" set "MODEL_NAME=%%B"
     )
 )
 
@@ -288,15 +276,19 @@ if exist "%HERMES_HOME%\gateway.pid" (
     )
 )
 
-:: hermes version (PowerShell – safer than findstr)
-for /f "usebackq delims=" %%L in (`powershell -NoProfile -Command ^
-    "(Get-Content '%SRC_DIR%\hermes-agent\hermes_cli\__init__.py' -Raw) -match '__version__\s*=\s*['\"']?([^'\"']+)['\"']' | Out-Null; $Matches[1]"`) do set "HERMES_VERSION=%%L"
+:: hermes version (tolerant of single or double quotes; empty when unknown)
+set "HERMES_VERSION=unknown"
+if exist "%SRC_DIR%\hermes-agent\hermes_cli\__init__.py" (
+    for /f "tokens=2 delims==\"'" %%V in ('powershell -NoProfile -Command "$t = Get-Content '%SRC_DIR%\hermes-agent\hermes_cli\__init__.py' -Raw; $m = [System.Text.RegularExpressions.Regex]::Match($t,'__version__\s*=\s*[''\"]([^''\"]+)'); if ($m.Success) { Write-Host ('VER=' + $m.Groups[1].Value) }" ^| findstr VER') do set "HERMES_VERSION=%%V"
+)
 
 :: -------------------------------------------------------------------
-:: 9. UI Functions (colour‑aware echo, menu, etc.)
+9. UI Functions (jump over subroutines on first pass) (colour‑aware echo, menu, etc.)
 :: -------------------------------------------------------------------
+goto :ShowMainMenu
 :DashLine
 echo %BRC%------------------------------------------------------------%RST%
+exit /b 0
 
 :ShowMainMenu
 cls
@@ -389,7 +381,7 @@ if %adv%==4 (
     hermes gateway restart
     echo %BRC%Gateway restart issued.%RST%
     pause
-    goto :detected_status   :: reuse the status‑engine before showing menu again
+    goto :ShowMainMenu
 )
 if %adv%==3 (
     echo %CYN%Opening config.yaml…%RST%

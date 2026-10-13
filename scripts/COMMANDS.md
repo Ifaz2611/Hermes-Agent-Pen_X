@@ -1,213 +1,138 @@
-# Hermes Portable — Command Reference
+# Command Reference
 
-## Portable Launcher Commands
+This guide covers the portable launchers and repository utilities. Hermes CLI subcommands are supplied by the downloaded Hermes source and may vary by version; use `hermes --help` for the commands supported by the installed version.
 
-These are the commands you type in your terminal / PowerShell.
+## Start Hermes
 
-### Windows (`launch.bat`)
+| Platform | Command |
+| --- | --- |
+| Windows | `.\launch.bat` |
+| macOS/Linux | `bash launch.sh` |
 
-| Command | What it does |
-|---------|-------------|
-| `launch.bat` | Start Hermes TUI (chat interface) |
-| `launch.bat /ramdisk` | **[PERF]** Load runtime into RAM Disk for 10x faster speed on USB 2.0 |
-| `launch.bat /silent` | Run without interactive banners (CI mode) |
-| `launch.bat hermes` | Same as above |
-...
-### Optimization Features
+Direct launcher commands:
 
-*   **RAM Disk Mode (`/ramdisk`):** Copies the ~600MB runtime from your USB drive to `%TEMP%`. Once loaded, Python and Node.js will run at SSD speeds instead of being throttled by USB 2.0 hardware.
-*   **Delta Updates:** The setup script now checks `manifest.json` and only downloads/extracts components that have actually changed.
-*   **Git Updates:** If `src/hermes-agent` is a Git repository, `launch.bat hermes update` will perform a surgical `git pull` instead of a full ZIP re-download.
+| Platform | Command | Effect |
+| --- | --- | --- |
+| Windows | `.\launch.bat /silent` | Suppress interactive banners where supported |
+| Windows | `.\launch.bat /ramdisk` | Copy runtime/source into a temporary local directory for the run |
+| Windows | `.\launch.bat /profile <name>` | Use `data/profiles/<name>` as the data directory |
+| macOS/Linux | `bash launch.sh --silent` | Reduce interactive launcher output |
+| macOS/Linux | `bash launch.sh --profile <name>` | Use `data/profiles/<name>` as the data directory |
+| macOS/Linux | `bash launch.sh --setup` | Force runtime setup again |
+| Windows | `.\launch.bat hermes <command>` | Forward a command to Hermes without opening the dashboard |
+| macOS/Linux | `bash launch.sh hermes <command>` | Forward a command to Hermes without opening the dashboard |
 
-| `launch.bat setup` | Run setup wizard |
-| `launch.bat hermes setup` | Same as above |
-| `launch.bat gateway` | Start messaging gateway (Telegram, etc.) |
-| `launch.bat hermes gateway` | Same as above |
-| `launch.bat hermes gateway restart` | Restart gateway |
-| `launch.bat hermes gateway stop` | Stop gateway |
-| `launch.bat hermes doctor` | Check for issues |
-| `launch.bat hermes status` | Show current status |
-| `launch.bat hermes config` | View current config |
-| `launch.bat hermes config edit` | Edit config in default editor |
-| `launch.bat hermes chat` | Start chat mode |
-| `launch.bat hermes update` | Update Hermes to latest version |
+For help and version options on macOS/Linux, use `bash launch.sh --help` or `bash launch.sh --version`. The Windows launcher forwards Hermes arguments; consult its source for launcher-specific options.
 
-### macOS / Linux (`launch.sh`)
+## Runtime setup
 
-| Command | What it does |
-|---------|-------------|
-| `./launch.sh` | Start Hermes TUI |
-| `./launch.sh setup` | Run setup wizard |
-| `./launch.sh gateway` | Start messaging gateway |
-| `./launch.sh hermes doctor` | Check for issues |
-| `./launch.sh hermes status` | Show status |
-| `./launch.sh hermes config` | View config |
-| `./launch.sh hermes update` | Update Hermes |
+Setup normally runs on first launch. To run it directly:
 
-### Multi-Agent Orchestration & Profiles
-
-Hermes supports multiple isolated profiles. Each profile has its own `SOUL.md`, `config.yaml`, and `.env`.
-
-| Command | What it does |
-|---------|-------------|
-| `launch.bat /profile <name>` | Start Hermes with a specific profile |
-| `hermes profile list` | List all available profiles |
-| `hermes profile create <name>` | Create a new profile (cloned from default) |
-| `hermes profile delete <name>` | Delete a profile |
-
-### Auto-MCP Manager
-
-Easily manage Model Context Protocol (MCP) servers.
-
-| Command | What it does |
-|---------|-------------|
-| `hermes mcp list` | List installed MCP servers |
-| `hermes mcp available` | List available servers to install |
-| `hermes mcp install <name>` | Download and plug in an MCP server |
-| `hermes mcp add <name> --cmd <cmd>` | Add a custom MCP server |
-| `hermes mcp remove <name>` | Uninstall an MCP server |
-
----
-
-## Reset Scripts (for testing / fresh starts)
-
-Located in `scripts/` folder.
-
-### Windows
+**Windows PowerShell**
 ```powershell
-cd scripts
-.\reset-windows.ps1 -Mode soft     # Keep data (API keys, config)
-.\reset-windows.ps1 -Mode full     # Delete everything
+.\scripts\setup-windows.ps1 -Root $PWD.Path
 ```
 
-### macOS / Linux
+**macOS/Linux**
 ```bash
-cd scripts
-bash reset-unix.sh soft             # Keep data
-bash reset-unix.sh full             # Full wipe
+bash scripts/setup-unix.sh "$PWD"
 ```
 
----
+The Windows script accepts options including `-SkipGit`, `-SkipPlaywright`, `-SkipUv`, `-DryRun`, and `-Launch`. The Unix script accepts `--skip-uv`, `--skip-rg`, `--skip-playwright`, and `--dry-run`. Run either script with its help option for the current option list.
 
-## Hermes CLI Commands
+## Hermes CLI
 
-These work inside `launch.bat` / `launch.sh` after `hermes`.
+The launcher prepares the environment and can forward Hermes commands:
 
-### Core
+```text
+.\launch.bat hermes --help
+.\launch.bat hermes doctor
+.\launch.bat hermes setup
+```
+
 ```bash
-hermes                      # Start TUI chat
-hermes chat                 # Same
-hermes --version            # Show version
-hermes -z "your prompt"     # One-shot prompt (no TUI)
+bash launch.sh hermes --help
+bash launch.sh hermes doctor
+bash launch.sh hermes setup
 ```
 
-### Setup & Config
+The forwarded command set depends on the downloaded Hermes version. For example, to use gateway, config, chat, or session commands, verify their availability with `hermes --help` first.
+
+## Security CLI
+
+The security package is located in `src/security/`. Direct invocation requires adding `src/` to Python’s module path. See [`../SECURITY.md`](../SECURITY.md) for password handling and security limitations.
+
+**macOS/Linux**
 ```bash
-hermes setup                # Full interactive wizard
-hermes setup model          # Change model/provider only
-hermes setup terminal       # Change terminal backend
-hermes setup gateway        # Configure messaging platforms
-hermes setup tools          # Configure tool providers
-hermes setup agent          # Customize agent behavior
-hermes config               # View current config
-hermes config edit          # Open in editor
-hermes config set <key> <value>   # Set a value
-hermes config get <key>     # Get a value
+PYTHONPATH=src python -m security --help
+PYTHONPATH=src python -m security status data/
 ```
 
-### Gateway (Messaging)
+**Windows PowerShell**
+```powershell
+$env:PYTHONPATH = "$PWD\src"
+python -m security --help
+python -m security status data\
+```
+
+## Repository utilities
+
+### Profiles
+
 ```bash
-hermes gateway              # Start gateway in foreground
-hermes gateway run          # Same
-hermes gateway run --replace # Replace existing instance
-hermes gateway restart      # Stop + start
-hermes gateway stop         # Stop running gateway
-hermes gateway install      # Install as system service (auto-start on boot)
-hermes gateway uninstall    # Remove system service
-hermes gateway status       # Check if running
+python tools/profiles/profile_manager.py list
+python tools/profiles/profile_manager.py create <name>
+python tools/profiles/profile_manager.py delete <name>
 ```
 
-### Sessions
+### Health report
+
 ```bash
-hermes sessions             # List sessions
-hermes sessions --resume    # Resume last session
-hermes --resume <name>      # Resume specific session
-hermes --continue           # Continue last session
+python tools/doctor/export_health.py
+python tools/doctor/export_health.py --data-dir path\to\data --out path\to\health.json
 ```
 
-### Tools & Diagnostics
+The default report is written to `data/health.json`.
+
+### MCP manager
+
+The manager is `tools/mcp/mcp_manager.py`. Use:
+
 ```bash
-hermes doctor               # Run diagnostics
-hermes dump                 # Dump debug info
-hermes debug                # Debug mode
-hermes logs                 # View logs
-hermes backup               # Backup data
-hermes checkpoints          # Manage checkpoints
+python tools/mcp/mcp_manager.py list
+python tools/mcp/mcp_manager.py available
+python tools/mcp/mcp_manager.py install filesystem
+python tools/mcp/mcp_manager.py add <name> --cmd <command> --env KEY=VALUE --args <arg>...
+python tools/mcp/mcp_manager.py remove <name>
 ```
 
-### Skills & Memory
+For custom server registration, `--args` consumes the remaining command-line arguments and must be last. Repeat environment entries as needed; do not put secrets in commands that may be retained in shell history.
+
+### S3 sync
+
+Install `boto3` in the Python environment used to run the script, then review the planned upload:
+
 ```bash
-hermes skills               # List skills
-hermes skills create        # Create new skill
-hermes skills edit          # Edit skill
-hermes memory               # Memory management
-hermes curator              # Curator tools
+python tools/sync/s3_sync.py --bucket <bucket> --prefix <prefix> --dry-run
+python tools/sync/s3_sync.py --bucket <bucket> --prefix <prefix> --encrypt --password <passphrase>
 ```
 
-### Other Commands
+Avoid passing secrets on shared systems or in shell histories. See [`../UX_MANAGEMENT.md`](../UX_MANAGEMENT.md) for data-selection and AWS credential notes.
+
+## Reset scripts
+
+Reset scripts can remove runtime files and, in full mode, user data. Inspect their options and back up `data/` before running.
+
+**Windows PowerShell**
+```powershell
+.\scripts\reset-windows.ps1 -Mode soft
+.\scripts\reset-windows.ps1 -Mode full
+```
+
+**macOS/Linux**
 ```bash
-hermes model                # Model management
-hermes fallback             # Fallback provider settings
-hermes proxy                # Proxy settings
-hermes lsp                  # LSP mode
-hermes postinstall          # Post-install hooks
-hermes whatsapp             # WhatsApp tools
-hermes slack                # Slack tools
-hermes send                 # Send message
-hermes login                # Login to service
-hermes logout               # Logout
-hermes auth                 # Authentication
-hermes cron                 # Cron jobs
-hermes webhook              # Webhooks
-hermes kanban               # Kanban board
-hermes hooks                # Hooks management
-hermes import               # Import data
-hermes pairing              # Device pairing
-hermes plugins              # Plugin management
-hermes insights             # Analytics
-hermes claw                 # OpenClaw import
-hermes version              # Version info
-hermes uninstall            # Uninstall
-hermes acp                  # ACP tools
-hermes profile              # Profile management
-hermes completion           # Shell completion
-hermes dashboard            # Dashboard
-hermes mcp                  # MCP tools
-hermes computer-use         # Computer use tools
+bash scripts/reset-unix.sh soft
+bash scripts/reset-unix.sh full
 ```
 
----
-
-## Telegram Bot Commands
-
-Send these to your Hermes bot on Telegram.
-
-| Command | What it does |
-|---------|-------------|
-| `/start` | Start chatting with Hermes |
-| `/stop` | Cancel current task/agent turn |
-| `/sethome` | Set this chat as your home channel (for cron/notifications) |
-| Any text | Hermes processes it as a prompt |
-
----
-
-## File Locations (Portable)
-
-| File | Path | Purpose |
-|------|------|---------|
-| API Keys | `data/.env` | Secrets (DeepSeek, Telegram, etc.) |
-| Settings | `data/config.yaml` | All Hermes configuration |
-| Chat History | `data/sessions/` | Saved conversations |
-| Logs | `data/logs/` | agent.log, errors.log, gateway.log |
-| State DB | `data/state.db` | Gateway state & locks |
-| Custom Prompt | `data/SOUL.md` | System prompt loaded on every launch |
+Use `full` only when you intend to remove the data covered by that script’s scope.

@@ -1,6 +1,50 @@
-# Ignore runtime cache and user data
-data/
-.cache/
-src/
+# User data and generated runtime files
+/data/
+/.cache/
+/backup/
 *.flag
 *.log
+
+# Keep the repository's own security package, but not downloaded upstream source.
+/src/*
+!/src/security/
+
+# Python bytecode, virtual environments, and test/build output
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+env/
+ENV/
+build/
+dist/
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+
+# Node / Electron dependencies and generated package logs
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Local secrets; allow a deliberately safe template to be committed.
+.env
+.env.*
+!.env.example
+
+# Editor and operating-system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+*.tmp
+*.temp

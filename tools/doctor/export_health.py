@@ -3,9 +3,6 @@
 Produce a JSON health report suitable for the Electron dashboard.
 Writes data to data/health.json by default.
 
-Usage:
-  python tools\doctor\export_health.py --out data/health.json
-
 Collects:
 - timestamp
 - disk usage for data/ and repo root
@@ -19,9 +16,9 @@ import json
 import os
 import sys
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 
-repo_root = Path(__file__).resolve().parents[3]
+repo_root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(repo_root / 'src'))
 
 try:
@@ -50,7 +47,7 @@ def dir_size(path: Path):
 
 
 def collect(data_dir: Path):
-    report = {'timestamp': datetime.utcnow().isoformat() + 'Z'}
+    report = {'timestamp': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')}
 
     # Data directory stats
     report['data_dir'] = str(data_dir)

@@ -63,19 +63,21 @@ fi
 
 if test_vault_encrypted "$DATA_DIR"; then
     echo ""
-    
+
     if ! unlock_data_vault "$DATA_DIR" "$PYTHON_EXE" "$USE_HARDWARE_TOKEN"; then
         echo ""
         echo -e "\033[31mCannot proceed without unlocking the vault.\033[0m"
         read -p "Retry? (y/n) " retry
-        
+
         if [[ "$retry" == "y" || "$retry" == "Y" ]]; then
-            unlock_data_vault "$DATA_DIR" "$PYTHON_EXE" "$USE_HARDWARE_TOKEN"
+            if ! unlock_data_vault "$DATA_DIR" "$PYTHON_EXE" "$USE_HARDWARE_TOKEN"; then
+                exit 1
+            fi
         else
             exit 1
         fi
     fi
-    
+
     echo ""
     exit 0
 else

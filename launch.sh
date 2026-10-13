@@ -57,33 +57,32 @@ _init_colors
 # ---------------------------------------------------------------------------
 # 2. Helper: unified logging (also writes to a file)
 #    Usage: log info "human readable message"
+#    NOTE: LOGFILE is resolved lazily - PORTABLE_ROOT is defined in section 3.
 # ---------------------------------------------------------------------------
-readonly LOGFILE="${PORTABLE_ROOT}/.cache/logs/launch.log"
 log() {
   local level=$1
   shift
-  local ts msg
+  local ts msg logfile
   ts=$(date +'%Y-%m-%d %H:%M:%S')
   msg="[$ts] [$level] $*"
-  printf '%b\n' "$msg" | tee -a "$LOGFILE"
-  # When the script is run non‑interactively we still want the file to stay up‑to‑date
-  if [[ "${LOGFILE}" != "" ]]; then printf '%s\n' "$msg" >>"$LOGFILE"; fi
+  logfile="${LOGFILE:-${PORTABLE_ROOT:-.}/.cache/logs/launch.log}"
+  mkdir -p "$(dirname "$logfile")" 2>/dev/null || true
+  printf '%s\n' "$msg" >>"$logfile" 2>/dev/null || true
+  printf '%s\n' "$msg"
 }
 
 # ---------------------------------------------------------------------------
 # 3. Resolve the portable root (absolute path, no trailing slash)
+#    NOTE: platform detection happens first (section 4) because RUNTIME_DIR
+#    depends on PLATFORM/ARCH. Derived dirs are set in section 4b.
 # ---------------------------------------------------------------------------
 readonly PORTABLE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 HERMES_HOME_BASE="${PORTABLE_ROOT}/data"
 HERMES_HOME="${HERMES_HOME_BASE}"
-readonly CACHE_DIR="${PORTABLE_ROOT}/.cache"
-readonly SRC_DIR="${PORTABLE_ROOT}/src"
-readonly RUNTIME_DIR="${CACHE_DIR}/runtimes/${PLATFORM:-linux}-${ARCH:-x64}"
-readonly LOG_DIR="${CACHE_DIR}/logs"
-mkdir -p "$LOG_DIR"
+export PORTABLE_ROOT
 
 # ---------------------------------------------------------------------------
-# 4. Detect platform / architecture
+# 4. Detect platform / architecture (must precede RUNTIME_DIR resolution)
 # ---------------------------------------------------------------------------
 OS_RAW="$(uname -s | tr '[:upper:]' '[:lower:]')"
 ARCH_RAW="$(uname -m | tr '[:upper:]' '[:lower:]')"
@@ -99,6 +98,16 @@ case "$ARCH_RAW" in
   aarch64|arm64) ARCH="arm64" ;;
   *)             log error "Unsupported architecture: $ARCH_RAW"; exit 1 ;;
 esac
+
+# ---------------------------------------------------------------------------
+# 4b. Derived directories (safe now that PLATFORM/ARCH are known)
+# ---------------------------------------------------------------------------
+readonly CACHE_DIR="${PORTABLE_ROOT}/.cache"
+readonly SRC_DIR="${PORTABLE_ROOT}/src"
+readonly RUNTIME_DIR="${CACHE_DIR}/runtimes/${PLATFORM}-${ARCH}"
+readonly LOG_DIR="${CACHE_DIR}/logs"
+readonly LOGFILE="${LOG_DIR}/launch.log"
+mkdir -p "$LOG_DIR"
 
 # ---------------------------------------------------------------------------
 # 5. Small CLI – help, version, silent, forced‑setup, profile
@@ -186,8 +195,6 @@ if [[ -f "${RUNTIME_DIR}/venv.path" ]]; then
 else
   VENV_PATH="${RUNTIME_DIR}/venv"
 fi
-
-readonly VENV_PATH
 export VIRTUAL_ENV="${VENV_PATH}"
 
 if [[ ! -x "${VENV_PATH}/bin/python" ]]; then
@@ -196,9 +203,15 @@ if [[ ! -x "${VENV_PATH}/bin/python" ]]; then
   # Pick a mount‑point‑independent temporary name (so parallel runs on the same USB
   # do not clash).  We use a hash of the runtime directory; on a clean drive it
   # will be the same.
-  DRIVE_ID=$(echo "${RUNTIME_DIR}" | md5sum | cut -c1-8 | tr -d ' \n')
-  TMP_VENV="/tmp/hermes‑portable‑venv‑${DRIVE_ID}"
-  export UV_CACHE_DIR="/tmp/hermes‑uv‑cache-${DRIVE_ID}"
+  if command -v md5sum >/dev/null 2>&1; then
+    DRIVE_ID=$(printf '%s' "${RUNTIME_DIR}" | md5sum | cut -c1-8 | tr -d ' \n')
+  elif command -v md5 >/dev/null 2>&1; then
+    DRIVE_ID=$(printf '%s' "${RUNTIME_DIR}" | md5 | cut -c1-8 | tr -d ' \n')
+  else
+    DRIVE_ID=$(printf '%s' "${RUNTIME_DIR}" | cksum | cut -c1-8 | tr -d ' \n')
+  fi
+  TMP_VENV="/tmp/hermes-portable-venv-${DRIVE_ID}"
+  export UV_CACHE_DIR="/tmp/hermes-uv-cache-${DRIVE_ID}"
   mkdir -p "${UV_CACHE_DIR}"
 
   # Save the new location so the next run re‑uses it.
@@ -211,27 +224,31 @@ if [[ ! -x "${VENV_PATH}/bin/python" ]]; then
   UV_EXE="${RUNTIME_DIR}/uv/uv"
   PY_EXE="${RUNTIME_DIR}/python/bin/python3"
 
-  if "${UV_EXE}" venv "${TMP_VENV}" --python "${PY_EXE}" --seed 2>/dev/null; then
+  if [[ -x "${UV_EXE}" ]] && "${UV_EXE}" venv "${TMP_VENV}" --python "${PY_EXE}" --seed 2>/dev/null; then
     :   # uv succeeded
   else
     "${PY_EXE}" -m venv "${TMP_VENV}"
   fi
 
   # Install the Hermes package (editable) **and** the Telegram extra.
-  PIP_CMD="${VENV_PATH}/bin/python -m pip"
-  if "${UV_EXE}" pip install \
-        --python "${TMP_VENNV}/bin/python" \
+  # Point all subsequent steps at the rebuilt venv.
+  VENV_PATH="${TMP_VENV}"
+
+  if [[ -x "${UV_EXE}" ]] && "${UV_EXE}" pip install \
+        --python "${TMP_VENV}/bin/python" \
         --link-mode=copy \
         -e "${SRC_DIR}/hermes-agent[all]" \
         "python-telegram-bot[webhooks]==22.6" 2>/dev/null; then
     :   # uv pip succeeded
   else
-    "${PIP_CMD}" install -e "${SRC_DIR}/hermes-agent[all]" "python-telegram-bot[webhooks]==22.6"
+    "${TMP_VENV}/bin/python" -m pip install -e "${SRC_DIR}/hermes-agent[all]" "python-telegram-bot[webhooks]==22.6"
   fi
 
   log ok "Portable venv rebuilt at ${TMP_VENV}"
+  readonly VENV_PATH
 else
   log info "Using existing venv at ${VENV_PATH}"
+  readonly VENV_PATH
 fi
 
 # ---------------------------------------------------------------------------
@@ -281,9 +298,8 @@ fi
 # the UI.  Handles cases like:
 #   launch.sh hermes setup
 #   launch.sh hermes chat --model <name>
-if [[ "${HERMES_TOP:-0}" -eq 1 ]]; then
-  shift   # remove the stripped “hermes” token
-fi
+# NOTE: the leading "hermes" token was already consumed by the
+# option-parsing loop above, so no extra shift is needed here.
 
 if (( $# )); then
   case "${1:-}" in
@@ -341,7 +357,7 @@ detect_status() {
   # ---- gateway PID & health -------------------------------------------------
   GATEWAY_STATUS="Stopped"
   GATEWAY_ICON="[-]"
-  GATEWAY_COLOR="${GRAY}"
+  GATEWAY_COLOR="${DIM}"
   GATEWAY_PID=""
 
   if [[ -f "${HERMES_HOME}/gateway.pid" ]]; then
@@ -387,11 +403,14 @@ spacer() { printf '\n%s\n\n' "$(printf '=%.0s' {1..70})"; }
 
 # Generic coloured printer (fallback to no colour in silent mode)
 cprint() {
-  local colour=$1 msg=$2
+  local colour="${1:-RESET}" msg="${2:-$1}"
+  if [[ "$#" -eq 1 ]]; then colour="RESET"; msg="$1"; fi
   if (( OPTION_SILENT )); then
     printf '%s\n' "$msg"
   else
-    colour=${colour:-RESET}
+    case "$colour" in RESET|BOLD|RED|GREEN|YELLOW|BLUE|MAGENTA|CYAN|WHITE|DIM) ;;
+      *) colour="RESET" ;;
+    esac
     printf '%b\n' "${!colour}${msg}${RESET}"
   fi
 }
@@ -402,7 +421,7 @@ cprint() {
 show_main_menu() {
   clear
   spacer
-  cprint BOLD "${BRIGHT_WHITE}HERMES PORTABLE LAUNCHER v$(detect_status | grep -o 'v[^ ]*')"
+  cprint BOLD "HERMES PORTABLE LAUNCHER v${HERMES_VERSION:-unknown}"
   cprint DIM "AI Agent for Everyone"
   spacer
 
@@ -410,7 +429,7 @@ show_main_menu() {
   [[ "$PROVIDER_NAME" != "—" ]] && cprint CYAN "Provider  ${PROVIDER_NAME}"
   [[ "$MODEL_NAME" != "—" ]] && cprint CYAN "Model     ${MODEL_NAME}"
   cprint CYAN "Gateway   ${GATEWAY_COLOR}${GATEWAY_ICON}${RESET} ${WHITE}${GATEWAY_STATUS}"
-  cprint CYAN "Version   ${GRAY}v${HERMES_VERSION}"
+  cprint CYAN "Version   v${HERMES_VERSION}"
   spacer
 
   cprint YELLOW "1) Start Hermes Chat"
@@ -428,7 +447,7 @@ show_main_menu() {
   if (( OPTION_SILENT )); then
     read -r -p "Enter option (1‑5): " choice || exit 0
   else
-    read -r -p "$(cprint BRIGHT_CYAN "Select option (1‑5): ") " choice || exit 0
+    read -r -p "$(cprint CYAN "Select option (1‑5): ") " choice || exit 0
     echo
   fi
 
@@ -445,7 +464,7 @@ show_main_menu() {
 show_advanced_menu() {
   clear
   spacer
-  cprint BOLD "${BRIGHT_WHITE}ADVANCED OPTIONS${RESET}"
+  cprint BOLD "${WHITE}ADVANCED OPTIONS${RESET}"
   spacer
 
   cprint YELLOW "1) Run Doctor (check environment)"
@@ -459,7 +478,7 @@ show_advanced_menu() {
   if (( OPTION_SILENT )); then
     read -r -p "Select option (1‑6): " adv_choice || return
   else
-    read -r -p "$(cprint BRIGHT_CYAN "Select option (1‑6): ") " adv_choice || return
+    read -r -p "$(cprint CYAN "Select option (1‑6): ") " adv_choice || return
     echo
   fi
 
@@ -507,7 +526,7 @@ menu_gateway() {
     hermes gateway &
     # Give it a moment to create the PID file.
     sleep 2
-    cprint CYAN "Gateway started – you may see a new entry in the PID table.")
+    cprint CYAN "Gateway started - check ${HERMES_HOME}/gateway.pid."
   fi
   detect_status
   show_main_menu
@@ -522,7 +541,7 @@ adv_doctor() {
   clear
   log info "Running Hermes Doctor ..."
   hermes doctor
-  cprint "Press Enter to return …" && read -r
+  cprint CYAN "Press Enter to return ..." && read -r
   show_advanced_menu
 }
 
@@ -536,7 +555,7 @@ adv_view_logs() {
   else
     cprint YELLOW "No gateway.log file found."
   fi
-  cprint "Press Enter to return …" && read -r
+  cprint CYAN "Press Enter to return ..." && read -r
   show_advanced_menu
 }
 
@@ -576,17 +595,12 @@ adv_update() {
 # ---------------------------------------------------------------------------
 # 15. Cleanup trap – delete the temporary /tmp venv if it was created
 # ---------------------------------------------------------------------------
+# NOTE: the tmp venv is intentionally kept across runs (venv.path cache).
+# Use scripts/reset-unix.sh for a full wipe instead of deleting on EXIT.
 cleanup_tmp_venv() {
-  if [[ -f "${RUNTIME_DIR}/venv.path" ]]; then
-    local tmp_path
-    tmp_path=$(cat "${RUNTIME_DIR}/venv.path")
-    if [[ "$tmp_path" != "${RUNTIME_DIR}/venv" && -d "$tmp_path" ]]; then
-      log info "Removing temporary venv ${tmp_path}"
-      rm -rf "$tmp_path"
-    fi
-  fi
+  # No-op by design; see note above.
+  :
 }
-trap cleanup_tmp_venv EXIT
 
 # ---------------------------------------------------------------------------
 # 16. Entry point

@@ -1,50 +1,31 @@
-Contributing
+# Contributing
 
-When contributing to this repository, please first discuss the change you wish to make via issue, email, or any other method with the owners of this repository before making a change.
+Thanks for considering a contribution to Hermes Agent Pendrive_X. For significant changes, open or join a discussion with the repository maintainers before investing in implementation.
 
-Please note we have a code of conduct, please follow it in all your interactions with the project.
-Pull Request Process
+## Before you start
 
-    Ensure any install or build dependencies are removed before the end of the layer when doing a build.
-    Update the README.md with details of changes to the interface, this includes new environment variables, exposed ports, useful file locations and container parameters.
-    Increase the version numbers in any examples files and the README.md to the new version that this Pull Request would represent. The versioning scheme we use is SemVer.
-    You may merge the Pull Request in once you have the sign-off of two other developers, or if you do not have permission to do that, you may request the second reviewer to merge it for you.
+- Check existing issues and documentation to avoid duplicating work.
+- Keep changes focused and compatible with the repository’s Windows and macOS/Linux targets.
+- Do not include API keys, passwords, personal data, generated runtime downloads, or local user data.
+- Read and follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
-Code of Conduct
-Our Pledge
+## Development workflow
 
-In the interest of fostering an open and welcoming environment, we as contributors and maintainers pledge to making participation in our project and our community a harassment-free experience for everyone, regardless of age, body size, disability, ethnicity, gender identity and expression, level of experience, nationality, personal appearance, race, religion, or sexual identity and orientation.
-Our Standards
+1. Create a focused branch from the project’s current default branch.
+2. Make the smallest complete change and update directly related documentation.
+3. Run relevant checks for the affected platform and scripts. For launcher/setup changes, check argument forwarding and fresh setup paths; for security changes, test against disposable data.
+4. Open a pull request describing the problem, the change, platform coverage, and validation performed. Include screenshots for user-facing UI changes when useful.
 
-Examples of behavior that contributes to creating a positive environment include:
+Do not claim a test or platform check was run unless it was actually run. If a platform is unavailable, state that clearly in the pull request.
 
-    Using welcoming and inclusive language
-    Being respectful of differing viewpoints and experiences
-    Gracefully accepting constructive criticism
-    Focusing on what is best for the community
-    Showing empathy towards other community members
+## Pull requests
 
-Examples of unacceptable behavior by participants include:
+- Keep pull requests focused and explain any user-visible behavior changes.
+- Document new flags, environment variables, file locations, or dependencies in the appropriate guide.
+- Preserve portability and avoid relying on the caller’s current working directory.
+- Never commit secrets, generated virtual environments, downloaded runtimes, or user data.
+- Maintainers will determine review requirements and release/versioning details.
 
-    The use of sexualized language or imagery and unwelcome sexual attention or advances
-    Trolling, insulting/derogatory comments, and personal or political attacks
-    Public or private harassment
-    Publishing others' private information, such as a physical or electronic address, without explicit permission
-    Other conduct which could reasonably be considered inappropriate in a professional setting
+## Security issues
 
-Our Responsibilities
-
-Project maintainers are responsible for clarifying the standards of acceptable behavior and are expected to take appropriate and fair corrective action in response to any instances of unacceptable behavior.
-
-Project maintainers have the right and responsibility to remove, edit, or reject comments, commits, code, wiki edits, issues, and other contributions that are not aligned to this Code of Conduct, or to ban temporarily or permanently any contributor for other behaviors that they deem inappropriate, threatening, offensive, or harmful.
-Scope
-
-This Code of Conduct applies both within project spaces and in public spaces when an individual is representing the project or its community. Examples of representing a project or community include using an official project e-mail address, posting via an official social media account, or acting as an appointed representative at an online or offline event. Representation of a project may be further defined and clarified by project maintainers.
-Enforcement
-
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported by contacting the project team at [INSERT EMAIL ADDRESS]. All complaints will be reviewed and investigated and will result in a response that is deemed necessary and appropriate to the circumstances. The project team is obligated to maintain confidentiality with regard to the reporter of an incident. Further details of specific enforcement policies may be posted separately.
-
-Project maintainers who do not follow or enforce the Code of Conduct in good faith may face temporary or permanent repercussions as determined by other members of the project's leadership.
-Attribution
-
-This Code of Conduct is adapted from the Contributor Covenant, version 1.4, available at http://contributor-covenant.org/version/1/4
+Do not report exploitable vulnerabilities in a public issue. Use the private reporting channel described in [`SECURITY.md`](SECURITY.md).

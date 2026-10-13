@@ -13,7 +13,7 @@ function createWindow () {
     }
   })
 
-  win.loadFile('index.html')
+  win.loadFile(path.join(__dirname, 'index.html'))
 }
 
 app.whenReady().then(() => {
@@ -28,19 +28,26 @@ app.on('window-all-closed', function () {
   if (process.platform !== 'darwin') app.quit()
 })
 
-const repoRoot = path.resolve(__dirname, '..')
+// __dirname is gui/electron, so the repo root is two levels up.
+const repoRoot = path.resolve(__dirname, '..', '..')
 
 ipcMain.handle('launch-hermes', async () => {
-  const launcBat = path.join(repoRoot, 'launch.bat')
   if (process.platform === 'win32') {
-    exec(`"${launcBat}"`, { cwd: repoRoot }, (err, stdout, stderr) => {
+    const launchBat = path.join(repoRoot, 'launch.bat')
+    exec(`"${launchBat}"`, { cwd: repoRoot }, (err) => {
       if (err) {
         console.error(err)
       }
     })
     return { status: 'started' }
   }
-  return { status: 'unsupported-platform' }
+  const launchSh = path.join(repoRoot, 'launch.sh')
+  exec(`bash "${launchSh}"`, { cwd: repoRoot }, (err) => {
+    if (err) {
+      console.error(err)
+    }
+  })
+  return { status: 'started' }
 })
 
 ipcMain.handle('open-data-folder', async () => {

@@ -54,7 +54,9 @@ log() {
     local ts
     ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     printf '[%s] [%s] %s\n' "$ts" "$level" "$msg"
-    printf '[%s] [%s] %s\n' "$ts" "$level" "$msg" >> "$log_file"
+    if [ -n "${log_file:-}" ]; then
+        printf '[%s] [%s] %s\n' "$ts" "$level" "$msg" >> "$log_file"
+    fi
 }
 
 # Wrapper for curl+wget with retry & checksum support
@@ -64,8 +66,8 @@ download() {
         local sz
         sz=$(file_size "$dest") || true
         if [ "$sz" -gt 0 ]; then
-            # Verify checksum if we have one (simplified)
-            if [ -n "${CHECKSUMS[$name]:-}" ]; then
+            # Verify checksum if we have one (simplified; CHECKSUMS optional)
+            if [ "${CHECKSUMS_DEFINED:-0}" = "1" ] && [ -n "${CHECKSUMS[$name]:-}" ]; then
                 echo "$(sha256sum "$dest")" | grep -q "^$(echo "${CHECKSUMS[$name]}" | cut -d' ' -f1) 2>/dev/null"
                 if [ $? -ne 0 ]; then
                     log WARN "$name checksum failed – re‑downloading."
@@ -120,25 +122,6 @@ extract_archive() {
     }
 }
 
-# Install a binary into $BIN_DIR (creates symlink)
-install_binary() {
-    local name=$1 archive=$2 dest_sub=$3
-    local tmp_dir
-    tmp_dir=$(mktemp -d -p "$RUNTIME_DIR" tmp.XXXXXX)
-
-    download "$url" "$archive"
-    mkdir -p "$tmp_dir/$dest_sub"
-    extract_archive "$archive" "$tmp_dir/$dest_sub"
-
-    # Create symlinks in $BIN_DIR
-    local link_path="$BIN_DIR/$name"
-    ln -sf "$tmp_dir/$dest_sub/$link" "$link_path"
-
-    # Cleanup
-    rm -rf "$tmp_dir"
-    log INFO "Binary $name installed and linked to $link_path"
-}
-
 # ------------------------------------------------------------
 # Parse optional flags
 # ------------------------------------------------------------
@@ -155,7 +138,7 @@ while [[ $# -gt 0 ]]; do
         --dry-run)          DRY_RUN=true;          shift ;;
         -h|--help)          usage ;;
         *)                  # first positional argument is the root
-            if [ -z "$PORTABLE_ROOT" ]; then
+            if [ -z "${PORTABLE_ROOT:-}" ]; then
                 PORTABLE_ROOT=$1
             else
                 fatal "Unexpected argument: $1"
@@ -167,9 +150,17 @@ done
 # ------------------------------------------------------------
 # Sanity‑check required tools
 # ------------------------------------------------------------
-for cmd in realpath mkdir rm ln cp chmod stat sha256sum curl tar gzip xz; do
+for cmd in mkdir rm ln cp chmod stat tar gzip; do
     command -v "$cmd" >/dev/null || fatal "Required command not found: $cmd"
 done
+# At least one of curl/wget is needed for downloads.
+if ! command -v curl >/dev/null && ! command -v wget >/dev/null; then
+    fatal "Neither curl nor wget available - cannot download runtimes"
+fi
+# Portable realpath fallback (macOS has no realpath by default).
+if ! command -v realpath >/dev/null; then
+    realpath() { python3 -c "import os,sys; print(os.path.realpath(sys.argv[1]))" "$1"; }
+fi
 
 # ------------------------------------------------------------
 # Resolve absolute root and derived paths
@@ -178,13 +169,13 @@ ABS_ROOT=$(realpath "${PORTABLE_ROOT:?Provide <portable-root>}" 2>/dev/null) \
     || fatal "Failed to resolve $PORTABLE_ROOT"
 CACHE_DIR="$ABS_ROOT/.cache"
 SRC_DIR="$ABS_ROOT/src"
-RUNTIME_DIR="$CACHE_DIR/runtimes/${PLATFORM}-${ARCH}"
-BIN_DIR="${RUNTIME_DIR}/bin"
-TMP_GLOBAL=$(mktemp -d -p "$CACHE_DIR" tmp.XXXXXX)
+# RUNTIME_DIR is resolved AFTER platform detection below.
+BIN_DIR=""
+mkdir -p "$CACHE_DIR"
+TMP_GLOBAL=$(mktemp -d "${CACHE_DIR}/tmp.XXXXXX")
 
-# Keep a log file alongside the runtime – helps with troubleshooting
-log_file="${RUNTIME_DIR}/setup.log"
-: > "$log_file"
+# log_file is initialised after RUNTIME_DIR is resolved below.
+log_file=""
 
 # ------------------------------------------------------------
 # Platform detection (unified)
@@ -204,18 +195,29 @@ case "$ARCH_OS" in
     *)               fatal "Unsupported architecture: $ARCH_OS" ;;
 esac
 
+# Derived runtime paths (platform is now known).
+RUNTIME_DIR="$CACHE_DIR/runtimes/${PLATFORM}-${ARCH}"
+BIN_DIR="${RUNTIME_DIR}/bin"
+mkdir -p "$RUNTIME_DIR" "$BIN_DIR" "$SRC_DIR" "$TMP_GLOBAL"
+log_file="${RUNTIME_DIR}/setup.log"
+: > "$log_file"
+
 # ------------------------------------------------------------
 # Build URLs (you can move these into a separate file)
 # ------------------------------------------------------------
 # NOTE: In a real repo you would generate these from a small JSON/YAML.
 # Here we keep them inline for brevity.
-if [ "$PLATFORM" = "macos" ]; then
-    PYTHON_ARCH="aarch64"
-else
-    PYTHON_ARCH="$ARCH_OS"
-fi
+case "$ARCH_OS" in
+    x86_64|amd64) PYTHON_ARCH="x86_64" ;;
+    aarch64|arm64) PYTHON_ARCH="aarch64" ;;
+    *) PYTHON_ARCH="$ARCH_OS" ;;
+esac
 
-PYTHON_URL="${PYTHON_BASE_URL}/20260510/cpython-${DEFAULT_PYTHON_VERSION}-${PYTHON_ARCH}-apple-darwin-install_only.tar.gz"
+if [ "$PLATFORM" = "macos" ]; then
+    PYTHON_URL="${PYTHON_BASE_URL}/20260510/cpython-${DEFAULT_PYTHON_VERSION}-${PYTHON_ARCH}-apple-darwin-install_only.tar.gz"
+else
+    PYTHON_URL="${PYTHON_BASE_URL}/20260510/cpython-${DEFAULT_PYTHON_VERSION}-${PYTHON_ARCH}-unknown-linux-gnu-install_only.tar.gz"
+fi
 if [ "$PLATFORM" = "macos" ]; then
     NODE_URL="${NODE_BASE_URL}/node-v${DEFAULT_NODE_VERSION}-darwin-${ARCH_OS}.tar.gz"
     UV_URL="${UV_BASE_URL}/${DEFAULT_UV_VERSION}/uv-${PYTHON_ARCH}-apple-darwin.tar.gz"
@@ -230,12 +232,12 @@ fi
 # Ready‑flag & manifest handling
 # ------------------------------------------------------------
 READY_FLAG="${RUNTIME_DIR}/ready.flag"
-MANIFEST "${RUNTIME_DIR}/manifest.json"
+MANIFEST="${RUNTIME_DIR}/manifest.json"
 
 # If a ready flag exists but any core binary is missing → treat as stale
 if [ -f "$READY_FLAG" ]; then
-    for core in python node uv; do
-        if [ ! -x "${RUNTIME_DIR}/${core}/bin/${core}" ]; then
+    for core in "python/bin/python3" "node/bin/node" "uv/uv"; do
+        if [ ! -x "${RUNTIME_DIR}/${core}" ]; then
             log WARN "$core binary missing – re‑initialising runtime folder."
             rm -f "$READY_FLAG"
             break
@@ -250,7 +252,7 @@ install_python() {
     [[ "$DRY_RUN" = true ]] && { log INFO "[DRY‑RUN] Would install Python"; return; }
 
     local archive="${RUNTIME_DIR}/python.tar.gz"
-    if ! $DOWNLOAD "$PYTHON_URL" "$archive"; then
+    if ! download "$PYTHON_URL" "$archive"; then
         fatal "Failed to download Python $PYTHON_URL"
     fi
 
@@ -271,7 +273,7 @@ install_node() {
     [[ "$DRY_RUN" = true ]] && { log INFO "[DRY‑RUN] Would install Node.js"; return; }
 
     local archive="${RUNTIME_DIR}/node.tar.xz"
-    if ! $DOWNLOAD "$NODE_URL" "$archive"; then
+    if ! download "$NODE_URL" "$archive"; then
         fatal "Failed to download Node $NODE_URL"
     fi
 
@@ -292,7 +294,7 @@ install_uv() {
     [[ "$DRY_RUN" = true ]] && { log INFO "[DRY‑RUN] Would install uv"; return; }
 
     local archive="${RUNTIME_DIR}/uv.tar.gz"
-    if ! $DOWNLOAD "$UV_URL" "$archive"; then
+    if ! download "$UV_URL" "$archive"; then
         fatal "Failed to download uv $UV_URL"
     fi
 
@@ -312,7 +314,7 @@ install_ripgrep() {
     [[ "$DRY_RUN" = true ]] && { log INFO "[DRY‑RUN] Would install ripgrep"; return; }
 
     local archive="${RUNTIME_DIR}/rg.tar.gz"
-    if ! $DOWNLOAD "$RG_URL" "$archive"; then
+    if ! download "$RG_URL" "$archive"; then
         log WARN "ripgrep download failed – will continue with 'grep' fallback."
         return 0
     fi
@@ -334,7 +336,7 @@ install_hermes_source() {
     [[ "$DRY_RUN" = true ]] && { log INFO "[DRY‑RUN] Would fetch Hermes source"; return; }
 
     local archive="${RUNTIME_DIR}/source.tar.gz"
-    if ! $DOWNLOAD "$HERMES_SRC_URL" "$archive"; then
+    if ! download "$HERMES_SRC_URL" "$archive"; then
         fatal "Failed to download Hermes source"
     fi
 
@@ -358,7 +360,9 @@ setup_venv() {
     fi
 
     local venv_dir="${RUNTIME_DIR}/venv"
-    if [ -d "$venv_dir" ]; then
+    VENV_PYTHON="${venv_dir}/bin/python"
+    export VENV_PYTHON
+    if [ -d "$venv_dir" ] && [ -x "$VENV_PYTHON" ]; then
         log INFO "Virtual environment already exists – skipping creation."
         return 0
     fi
@@ -380,8 +384,9 @@ setup_venv() {
     fi
 
     # Ensure the hermes entry‑point is executable
-    chmod +x "$venv_dir/bin/hermes" || true
+    chmod +x "$venv_dir/bin/hermes" 2>/dev/null || true
     VENV_PYTHON="${venv_dir}/bin/python"
+    export VENV_PYTHON
     log INFO "Virtual environment ready"
 }
 
@@ -403,7 +408,7 @@ install_telegram_deps() {
 
     log INFO "Installing python‑telegram‑bot (messaging) ..."
     if [ -x "${RUNTIME_DIR}/uv/uv" ]; then
-        "${RUNTIME_DIR}/uv/uv" pip install "$VENV_PYTHON" --link-mode=copy "python-telegram-bot[webhooks]==22.6"
+        "${RUNTIME_DIR}/uv/uv" pip install --python "$VENV_PYTHON" --link-mode=copy "python-telegram-bot[webhooks]==22.6"
     else
         "$VENV_PYTHON" -m pip install "python-telegram-bot[webhooks]==22.6"
     fi
@@ -415,7 +420,7 @@ install_security_deps() {
 
     log INFO "Installing security dependencies (cryptography, yubikey-manager) ..."
     if [ -x "${RUNTIME_DIR}/uv/uv" ]; then
-        "${RUNTIME_DIR}/uv/uv" pip install "$VENV_PYTHON" --link-mode=copy \
+        "${RUNTIME_DIR}/uv/uv" pip install --python "$VENV_PYTHON" --link-mode=copy \
             "cryptography>=41.0.0" \
             "yubikey-manager>=5.0.0"
     else
@@ -451,10 +456,10 @@ generate_manifest() {
         "hermes": "$(basename "$HERMES_SRC_URL" .tar.gz)"
     },
     "paths": {
-        "runtime_dir": "$(realpath "$RUNTIME_DIR")",
-        "binary_dir": "$(realpath "$BIN_DIR")",
-        "venv_dir": "$(realpath "$VENV_DIR")",
-        "src_dir": "$(realpath "$SRC_DIR/hermes-agent")"
+        "runtime_dir": "$(realpath "$RUNTIME_DIR" 2>/dev/null || echo "$RUNTIME_DIR")",
+        "binary_dir": "$(realpath "$BIN_DIR" 2>/dev/null || echo "$BIN_DIR")",
+        "venv_dir": "$(realpath "${RUNTIME_DIR}/venv" 2>/dev/null || echo "${RUNTIME_DIR}/venv")",
+        "src_dir": "$(realpath "$SRC_DIR/hermes-agent" 2>/dev/null || echo "$SRC_DIR/hermes-agent")"
     }
 }
 EOF
@@ -483,9 +488,13 @@ install_telegram_deps
 install_security_deps
 install_playwright
 
-# Write lock / manifest flags
-touch "$READY_FLAG"
-generate_manifest
+# Write lock / manifest flags (skipped in dry-run mode)
+if [[ "$DRY_RUN" = true ]]; then
+    log INFO "[DRY-RUN] Skipping ready.flag and manifest generation."
+else
+    touch "$READY_FLAG"
+    generate_manifest
+fi
 
 # Cleanup temporary extraction folders
 rm -rf "$TMP_GLOBAL"
