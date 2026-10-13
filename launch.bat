@@ -1,53 +1,73 @@
 @echo off
 ::======================================================================
-:: Hermes Agent – Pendrive_X (Windows launcher)
+:: Hermes Agent ÃÃÃ" Pendrive_X (Windows launcher)
 ::======================================================================
 :: Portable, isolated entry point for the Hermes AI Agent.
 ::======================================================================
 :: Features retained:
-::   • First‑run runtime download (Python, Node, uv, rg, Git)
-::   • Environment isolation (PATH, PYTHON*, UV*, PLAYWRIGHT_BROWSERS_PATH)
-::   • Interactive colour‑coded dashboard
-::   • Advanced options (Doctor, Logs, Config, Restart, Update)
+::   ÃÃÃ FirstÃÃÃ'run runtime download (Python, Node, uv, rg, Git)
+::   ÃÃÃ Environment isolation (PATH, PYTHON*, UV*, PLAYWRIGHT_BROWSERS_PATH)
+::   ÃÃÃ Interactive colourÃÃÃ'coded dashboard
+::   ÃÃÃ Advanced options (Doctor, Logs, Config, Restart, Update)
 ::======================================================================
 :: New goodies:
-::   • Safer argument handling (SHIFT)
-::   • Centralised colour & error helpers
-::   • ANSI‑escape fallback for older Windows
-::   • Optional /silent mode for CI
+::   ÃÃÃ Safer argument handling (SHIFT)
+::   ÃÃÃ Centralised colour & error helpers
+::   ÃÃÃ ANSIÃÃÃ'escape fallback for older Windows
+::   ÃÃÃ Optional /silent mode for CI
 ::======================================================================
 
 setlocal EnableDelayedExpansion
 :: -------------------------------------------------------------------
-:: 0. Helper helpers – colour & error logging
+:: 0. Helper helpers ÃÃÃ" colour & error logging
 :: -------------------------------------------------------------------
-if errorlevel 1 (rem trick – will be ignored, just keep setlocal alive)
+if errorlevel 1 (rem trick ÃÃÃ" will be ignored, just keep setlocal alive)
 
 :: -------------------------------------------------------------------
-:: 0a. Detect ESC character (works on Windows 10+ and falls back)
+:: 0a. Detect ESC character (works on WindowsÃÃÃ10+ and falls back)
 :: -------------------------------------------------------------------
-for /f "tokens=1" %%a in ('prompt $E ^| cmd') do set "ESC=%%a"
-if not defined ESC set "ESC="   & rem classic ESC for older cmd
+set "ESC="
+for /f "delims=" %%a in ('powershell -NoProfile -Command [char]27 2^>nul') do set "ESC=%%a"
 
-:: colour macros (they just expand to the ESC string + code)
-set "RST=%ESC%[0m"
-set "BOLD=%ESC%[1m"
-set "DIM=%ESC%[2m"
-set "RED=%ESC%[31m"
-set "GRN=%ESC%[32m"
-set "YEL=%ESC%[33m"
-set "BLU=%ESC%[34m"
-set "MAG=%ESC%[35m"
-set "CYN=%ESC%[36m"
-set "WHT=%ESC%[37m"
-set "BRD=%ESC%[90m"
-set "BRC=%ESC%[92m"
-set "BRE=%ESC%[93m"
-set "BRM=%ESC%[94m"
-set "BRY=%ESC%[95m"
-set "BRG=%ESC%[96m"
-set "BGB=%ESC%[44m%ESC%[97m"
-set "BGC=%ESC%[46m%ESC%[30m"
+if defined ESC (
+    set "RST=%ESC%[0m"
+    set "BOLD=%ESC%[1m"
+    set "DIM=%ESC%[2m"
+    set "RED=%ESC%[31m"
+    set "GRN=%ESC%[32m"
+    set "YEL=%ESC%[33m"
+    set "BLU=%ESC%[34m"
+    set "MAG=%ESC%[35m"
+    set "CYN=%ESC%[36m"
+    set "WHT=%ESC%[37m"
+    set "BRD=%ESC%[90m"
+    set "BRC=%ESC%[92m"
+    set "BRE=%ESC%[93m"
+    set "BRM=%ESC%[94m"
+    set "BRY=%ESC%[95m"
+    set "BRG=%ESC%[96m"
+    set "BGB=%ESC%[44m%ESC%[97m"
+    set "BGC=%ESC%[46m%ESC%[30m"
+) else (
+    set "RST="
+    set "BOLD="
+    set "DIM="
+    set "RED="
+    set "GRN="
+    set "YEL="
+    set "BLU="
+    set "MAG="
+    set "CYN="
+    set "WHT="
+    set "BRD="
+    set "BRC="
+    set "BRE="
+    set "BRM="
+    set "BRY="
+    set "BRG="
+    set "BGB="
+    set "BGC="
+)
 
 :: -------------------------------------------------------------------
 :: 0b. Centralised error printer (subroutine - must be skipped on fallthrough)
@@ -81,6 +101,8 @@ set "VENV_DIR=%RUNTIME_DIR%\venv"
 set "SILENT=0"
 set "USE_RAMDISK=0"
 set "PROFILE_NAME="
+set "CMD_ACTION="
+set "FORWARD_ARGS="
 
 :parse_args
 if "%~1"=="" goto :args_done
@@ -103,7 +125,59 @@ if /I "%~1"=="/profile" (
     shift
     goto :parse_args
 )
+if /I "%~1"=="/help" goto :show_help
+if /I "%~1"=="--help" goto :show_help
+if /I "%~1"=="-h" goto :show_help
+if /I "%~1"=="/?" goto :show_help
+if /I "%~1"=="--version" goto :show_version
+if /I "%~1"=="-v" goto :show_version
+
+set "FIRST_TOKEN=%~1"
+if /I "!FIRST_TOKEN!"=="hermes" (
+    shift
+    set "CMD_ACTION=hermes"
+    goto :collect_remaining
+)
+if /I "!FIRST_TOKEN!"=="mcp" (
+    shift
+    set "CMD_ACTION=mcp"
+    goto :collect_remaining
+)
+if /I "!FIRST_TOKEN!"=="profile" (
+    shift
+    set "CMD_ACTION=profile"
+    goto :collect_remaining
+)
+set "CMD_ACTION=hermes"
+
+:collect_remaining
+if "%~1"=="" goto :args_done
+set "FORWARD_ARGS=!FORWARD_ARGS! %1"
+shift
+goto :collect_remaining
+
 :args_done
+goto :after_help_handlers
+
+:show_help
+echo Hermes Pendrive_X - Portable Launcher
+echo.
+echo Usage:
+echo   launch.bat [options] [hermes ^<sub-command^>...]
+echo.
+echo Options:
+echo   -h, --help, /?       Show this help message and exit
+echo   -v, --version        Print launcher version
+echo   /silent              Run non-interactive
+echo   /profile ^<name^>      Specify a custom data profile
+echo   /ramdisk             Run with RAM disk optimization
+exit /b 0
+
+:show_version
+echo Launcher version: 1.0.0
+exit /b 0
+
+:after_help_handlers
 
 :: Update HERMES_HOME if profile is specified
 set "HERMES_HOME=%PORTABLE_ROOT%\data"
@@ -112,61 +186,72 @@ if defined PROFILE_NAME (
     if %SILENT%==0 echo %BRM%[PROFILE]%RST% Active Profile: %MAG%!PROFILE_NAME!%RST%
 )
 
-:: -------------------------------------------------------------------
-:: 4. First‑run runtime download (Always against USB root)
+:: Standalone tools dispatch (does not require runtime bootstrap)
+if defined CMD_ACTION (
+    if /I "!CMD_ACTION!"=="mcp" (
+        python "%PORTABLE_ROOT%\tools\mcp\mcp_manager.py"!FORWARD_ARGS!
+        exit /b !ERRORLEVEL!
+    )
+    if /I "!CMD_ACTION!"=="profile" (
+        python "%PORTABLE_ROOT%\tools\profiles\profile_manager.py"!FORWARD_ARGS!
+        exit /b !ERRORLEVEL!
+    )
+)
+
+:: 4. FirstÃÃÃ'run runtime download (Always against USB root)
 :: -------------------------------------------------------------------
 if not exist "%RUNTIME_DIR%\ready.flag" (
     if %SILENT%==0 (
         echo.
-        echo %BGB% HERMES Pendrive_X – First‑Run Setup %RST%
-        echo %BGB%    ~600 MB of runtimes will be downloaded. %RST%
+        echo %BGB% HERMES Pendrive_X ÃÃÃ" FirstÃÃÃ'Run Setup %RST%
+        echo %BGB%    ~600ÃÃÃMB of runtimes will be downloaded. %RST%
         echo.
     )
     powershell -NoProfile -ExecutionPolicy Bypass ^
         -Command "& { .\scripts\setup-windows.ps1 -Root \"%PORTABLE_ROOT%\" }" ^
         2>&1 | findstr /V "^$"
     if errorlevel 1 (
-        call :MkErr "Runtime‑setup script failed (exit %ERRORLEVEL%). Abort."
+        call :MkErr "RuntimeÃÃÃ'setup script failed with exit code %ERRORLEVEL%. Abort."
     )
 )
 
 :: -------------------------------------------------------------------
 :: 5. RAM Disk / Read-Only Mode Optimization
 :: -------------------------------------------------------------------
-if %USE_RAMDISK%==1 (
-    echo %CYN%[PERF]%RST% RAM Disk mode enabled.
-    set "RAMDISK_ROOT=%TEMP%\hermes_ramdisk"
-    
-    :: We want to copy .cache and src, but NOT data (persistence on USB)
-    if not exist "!RAMDISK_ROOT!" mkdir "!RAMDISK_ROOT!"
-    
-    echo %CYN%[PERF]%RST% Syncing runtime to local temp (speed boost)...
-    
-    :: Copy .cache (runtimes)
-    if not exist "!RAMDISK_ROOT!\.cache\runtimes\windows-x64\ready.flag" (
-        echo %CYN%[PERF]%RST% Copying .cache (this may take 30-60s on USB 2.0)...
-        if not exist "!RAMDISK_ROOT!\.cache" mkdir "!RAMDISK_ROOT!\.cache"
-        xcopy "%CACHE_DIR%\*" "!RAMDISK_ROOT!\.cache\" /E /I /H /Y /Q >nul
-    )
+if %USE_RAMDISK%==0 goto :skip_ramdisk
+echo %CYN%[PERF]%RST% RAM Disk mode enabled.
+set "RAMDISK_ROOT=%TEMP%\hermes_ramdisk"
 
-    :: Copy src
-    if not exist "!RAMDISK_ROOT!\src\hermes-agent" (
-        echo %CYN%[PERF]%RST% Copying src...
-        if not exist "!RAMDISK_ROOT!\src" mkdir "!RAMDISK_ROOT!\src"
-        xcopy "%SRC_DIR%\*" "!RAMDISK_ROOT!\src\" /E /I /H /Y /Q >nul
-    )
+rem We want to copy .cache and src, but NOT data (persistence on USB)
+if not exist "!RAMDISK_ROOT!" mkdir "!RAMDISK_ROOT!"
 
-    :: Redirect paths to RAM disk for this session
-    set "CACHE_DIR=!RAMDISK_ROOT!\.cache"
-    set "RUNTIME_DIR=!CACHE_DIR!\runtimes\windows-x64"
-    set "SRC_DIR=!RAMDISK_ROOT!\src"
-    set "VENV_DIR=!RUNTIME_DIR!\venv"
+echo %CYN%[PERF]%RST% Syncing runtime to local temp [speed boost]...
 
-    :: Fix venv path in pyvenv.cfg (absolute paths in venv need to point to RAM disk)
-    if exist "!VENV_DIR!\pyvenv.cfg" (
-        powershell -NoProfile -Command "(Get-Content '!VENV_DIR!\pyvenv.cfg') -replace '^home = .*', 'home = !RUNTIME_DIR!\python' | Set-Content '!VENV_DIR!\pyvenv.cfg'"
-    )
+rem Copy .cache (runtimes)
+if not exist "!RAMDISK_ROOT!\.cache\runtimes\windows-x64\ready.flag" (
+    echo %CYN%[PERF]%RST% Copying .cache [this may take 30-60s on USB 2.0]...
+    if not exist "!RAMDISK_ROOT!\.cache" mkdir "!RAMDISK_ROOT!\.cache"
+    xcopy "%CACHE_DIR%\*" "!RAMDISK_ROOT!\.cache\" /E /I /H /Y /Q >nul
 )
+
+rem Copy src
+if not exist "!RAMDISK_ROOT!\src\hermes-agent" (
+    echo %CYN%[PERF]%RST% Copying src...
+    if not exist "!RAMDISK_ROOT!\src" mkdir "!RAMDISK_ROOT!\src"
+    xcopy "%SRC_DIR%\*" "!RAMDISK_ROOT!\src\" /E /I /H /Y /Q >nul
+)
+
+rem Redirect paths to RAM disk for this session
+set "CACHE_DIR=!RAMDISK_ROOT!\.cache"
+set "RUNTIME_DIR=!CACHE_DIR!\runtimes\windows-x64"
+set "SRC_DIR=!RAMDISK_ROOT!\src"
+set "VENV_DIR=!RUNTIME_DIR!\venv"
+
+rem Fix venv path in pyvenv.cfg
+if exist "!VENV_DIR!\pyvenv.cfg" (
+    powershell -NoProfile -Command "(Get-Content '!VENV_DIR!\pyvenv.cfg') -replace '^home = .*', 'home = !RUNTIME_DIR!\python' | Set-Content '!VENV_DIR!\pyvenv.cfg'"
+)
+:skip_ramdisk
 
 :: -------------------------------------------------------------------
 :: 6. Activate the portable venv (keeps PATH tidy)
@@ -194,28 +279,23 @@ if not exist "%SRC_DIR%\hermes-agent" (
 )
 
 :: -------------------------------------------------------------------
-:: 7. Argument forwarding (handles “hermes setup” pattern)
+:: 7. Argument forwarding (handles ÃÃÃhermes setupÃÃÃ pattern)
 :: NOTE: no GOTO labels inside parenthesised blocks - batch cannot handle it.
 :: -------------------------------------------------------------------
-set "ARGS="
-if not "%~1"=="" (
-    if /I "%~1"=="hermes" (
-        shift
+if defined CMD_ACTION (
+    if /I "!CMD_ACTION!"=="mcp" (
+        python "%PORTABLE_ROOT%\tools\mcp\mcp_manager.py"!FORWARD_ARGS!
+        exit /b !ERRORLEVEL!
     )
-    if /I "%~1"=="mcp" (
-        shift
-        call :RunMcp %*
-        exit /b %ERRORLEVEL%
+    if /I "!CMD_ACTION!"=="profile" (
+        python "%PORTABLE_ROOT%\tools\profiles\profile_manager.py"!FORWARD_ARGS!
+        exit /b !ERRORLEVEL!
     )
-    if /I "%~1"=="profile" (
-        shift
-        call :RunProfile %*
-        exit /b %ERRORLEVEL%
+    if /I "!CMD_ACTION!"=="hermes" (
+        hermes!FORWARD_ARGS!
+        exit /b !ERRORLEVEL!
     )
-    if not "%~1"=="" (
-        call :RunHermes %*
-        exit /b %ERRORLEVEL%
-    )
+)
 )
 goto :status_detect
 :RunMcp
@@ -270,7 +350,7 @@ if exist "%HERMES_HOME%\config.yaml" (
 if exist "%HERMES_HOME%\gateway.pid" (
     for /f "usebackq delims=" %%A in ("%HERMES_HOME%\gateway.pid") do (
         set "GATEWAY_PID=%%A"
-        set "GATEWAY_STATUS=Running (PID !GATEWAY_PID!)"
+        set "GATEWAY_STATUS=Running [PID !GATEWAY_PID!]"
         set "GATEWAY_ICON=[OK]"
         set "GATEWAY_COLOR=%GRN%"
     )
@@ -283,7 +363,7 @@ if exist "%SRC_DIR%\hermes-agent\hermes_cli\__init__.py" (
 )
 
 :: -------------------------------------------------------------------
-9. UI Functions (jump over subroutines on first pass) (colour‑aware echo, menu, etc.)
+9. UI Functions (jump over subroutines on first pass) (colourÃÃÃ'aware echo, menu, etc.)
 :: -------------------------------------------------------------------
 goto :ShowMainMenu
 :DashLine
@@ -293,7 +373,7 @@ exit /b 0
 :ShowMainMenu
 cls
 call :DashLine
-echo %BRG% HERMES AGENT – PENDRIVE_X  v%HERMES_VERSION% %RST%
+echo %BRG% HERMES AGENT ÃÃÃ" PENDRIVE_X  v%HERMES_VERSION% %RST%
 echo %BGC% Portable, Isolated AI Agent Environment %RST%
 call :DashLine
 echo.
@@ -306,7 +386,7 @@ echo.
 echo %CYN%--- MAIN ACTIONS %RST%
 echo  %YEL%[1]%RST%  %WHT%Start Hermes Chat%RST%           %DIM%-> Interactive CLI%RST%
 echo  %YEL%[2]%RST%  %WHT%Setup / Reconfigure%RST%         %DIM%-> Provider & model%RST%
-if "!GATEWAY_STATUS!"=="Running (PID !GATEWAY_PID!)" (
+if "!GATEWAY_STATUS!"=="Running [PID !GATEWAY_PID!]" (
     echo  %YEL%[3]%RST%  %WHT%Stop Gateway%RST%            %DIM%-> %RED%[Currently Live]%RST%
 ) else (
     echo  %YEL%[3]%RST%  %WHT%Start Gateway%RST%           %DIM%-> Run API server in background%RST%
@@ -314,18 +394,18 @@ if "!GATEWAY_STATUS!"=="Running (PID !GATEWAY_PID!)" (
 echo  %YEL%[4]%RST%  %WHT%Advanced Options%RST%         %DIM%-> Doctor, Logs, Config, Update%RST%
 echo  %YEL%[5]%RST%   %BGB%Exit Launcher%RST%           %DIM%-> Close this window%RST%
 call :DashLine
-echo %WHT%Select an option (1‑5):%RST%
+echo %WHT%Select an option (1ÃÃÃ'5):%RST%
 choice /C 12345 /N /M "Your choice:"
 set "choice=%ERRORLEVEL%"
 
 :: ---------------------------------------------------
-:: 10. Main‑menu dispatch
+:: 10. MainÃÃÃ'menu dispatch
 :: ---------------------------------------------------
 if %choice%==5 goto :EofExit
 if %choice%==4 goto :ShowAdvanced
 if %choice%==3 (
-    if "!GATEWAY_STATUS!"=="Running (PID !GATEWAY_PID!)" (
-        echo %YEL%Stopping gateway (PID !GATEWAY_PID!)...%RST%
+    if "!GATEWAY_STATUS!"=="Running [PID !GATEWAY_PID!]" (
+        echo %YEL%Stopping gateway [PID !GATEWAY_PID!]...%RST%
         hermes gateway stop
         echo %BRC%Gateway stopped successfully.%RST%
         pause
@@ -333,7 +413,7 @@ if %choice%==3 (
         echo %CYN%Starting gateway in background...%RST%
         start "Hermes Gateway" cmd /c "hermes gateway"
         timeout /t 2 >nul
-        echo %BRC%Gateway started (check %HERMES_HOME%\gateway.pid).%RST%
+        echo %BRC%Gateway started [check %HERMES_HOME%\gateway.pid].%RST%
         pause
     )
     goto :ShowMainMenu
@@ -365,7 +445,7 @@ echo  %YEL%[4]%RST%  %WHT%Restart Gateway%RST%          %DIM%-> Stop & start imm
 echo  %YEL%[5]%RST%  %WHT%Update Hermes%RST%            %DIM%-> Pull latest source %RST%
 echo  %YEL%[6]%RST%    %BGB%Back to Main Menu%RST%
 call :DashLine
-echo %WHT%Select an option (1‑6):%RST%
+echo %WHT%Select an option (1ÃÃÃ'6):%RST%
 choice /C 123456 /N /M "Your choice:"
 set "adv=%ERRORLEVEL%"
 
@@ -384,13 +464,13 @@ if %adv%==4 (
     goto :ShowMainMenu
 )
 if %adv%==3 (
-    echo %CYN%Opening config.yaml…%RST%
+    echo %CYN%Opening config.yamlÃÃÃ%RST%
     hermes config edit
     pause
     goto :ShowAdvanced
 )
 if %adv%==2 (
-    echo %CYN%Showing gateway log…%RST%
+    echo %CYN%Showing gateway logÃÃÃ%RST%
     if exist "%HERMES_HOME%\logs\gateway.log" (
         powershell -NoProfile -Command "Get-Content '%HERMES_HOME%\logs\gateway.log' -Tail 20"
     ) else (
@@ -400,7 +480,7 @@ if %adv%==2 (
     goto :ShowAdvanced
 )
 if %adv%==1 (
-    echo %CYN%Running Hermes Doctor…%RST%
+    echo %CYN%Running Hermes DoctorÃÃÃ%RST%
     hermes doctor
     pause
     goto :ShowAdvanced

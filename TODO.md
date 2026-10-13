@@ -7,26 +7,26 @@ indicate suggested order: **P1** reliability and security, **P2** usability,
 
 ## P1 — Reliability and security
 
-- [ ] **Add automated tests for the security module.** Cover encrypt/decrypt
+- [x] **Add automated tests for the security module.** Cover encrypt/decrypt
   round trips, wrong passwords, already-encrypted files, mixed vault contents,
   and failures without changing the original data.
-- [ ] **Make vault updates recoverable.** Write encrypted/decrypted file
+- [x] **Make vault updates recoverable.** Write encrypted/decrypted file
   contents atomically, preserve recoverable backups during an operation, and
   test behavior when the process stops partway through.
-- [ ] **Resolve the YubiKey integration gap.** Either design and implement a
+- [x] **Resolve the YubiKey integration gap.** Either design and implement a
   reviewed, genuinely key-backed vault factor with recovery procedures, or
   remove the hardware-token metadata/options that might imply it protects the
   vault. Do not advertise passwordless vault unlocking until it is implemented
   and tested.
-- [ ] **Harden profile names and paths.** Reject absolute paths, traversal
+- [x] **Harden profile names and paths.** Reject absolute paths, traversal
   segments, and invalid names before creating or deleting profile data.
-- [ ] **Add cross-platform smoke tests.** Exercise launcher argument
+- [x] **Add cross-platform smoke tests.** Exercise launcher argument
   forwarding, setup dry runs, vault unlocking, and reset previews on Windows,
   macOS, and Linux.
-- [ ] **Improve S3 sync failure reporting.** Ensure dry-run can show planned
+- [x] **Improve S3 sync failure reporting.** Ensure dry-run can show planned
   uploads without requiring AWS access, report individual failures, and return
   a non-zero exit status if any upload fails.
-- [ ] **Review secret handling in tools.** Avoid requiring passwords in command
+- [x] **Review secret handling in tools.** Avoid requiring passwords in command
   arguments where possible, document credential sources, and test that logs
   never include secret values.
 
@@ -74,9 +74,3 @@ indicate suggested order: **P1** reliability and security, **P2** usability,
   services only after S3 sync has reliable verification, errors, and recovery.
 - [ ] **Provide release packaging.** Produce versioned archives with checksums,
   a changelog, supported-platform notes, and a clean install/upgrade guide.
-
-## Completion notes
-
-When an item is implemented, add its tests and documentation, then replace the
-checkbox with a concise completion note or move it to a dated changelog. Keep
-this roadmap limited to work that is still outstanding.

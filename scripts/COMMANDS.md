@@ -11,18 +11,18 @@ This guide covers the portable launchers and repository utilities. Hermes CLI su
 
 Direct launcher commands:
 
-| Platform | Command | Effect |
-| --- | --- | --- |
-| Windows | `.\launch.bat /silent` | Suppress interactive banners where supported |
-| Windows | `.\launch.bat /ramdisk` | Copy runtime/source into a temporary local directory for the run |
-| Windows | `.\launch.bat /profile <name>` | Use `data/profiles/<name>` as the data directory |
-| macOS/Linux | `bash launch.sh --silent` | Reduce interactive launcher output |
-| macOS/Linux | `bash launch.sh --profile <name>` | Use `data/profiles/<name>` as the data directory |
-| macOS/Linux | `bash launch.sh --setup` | Force runtime setup again |
+| Windows | `.\launch.bat --help` | Show launcher help message and options |
+| Windows | `.\launch.bat --version` | Print launcher version |
+| Windows | `.\launch.bat profile <cmd>` | Manage profiles (list, create, switch, delete) |
+| Windows | `.\launch.bat mcp <cmd>` | Manage MCP servers without booting runtime |
+| macOS/Linux | `bash launch.sh --help` | Show launcher help message and options |
+| macOS/Linux | `bash launch.sh --version` | Print launcher and Hermes versions |
+| macOS/Linux | `bash launch.sh profile <cmd>` | Manage profiles (list, create, switch, delete) |
+| macOS/Linux | `bash launch.sh mcp <cmd>` | Manage MCP servers without booting runtime |
 | Windows | `.\launch.bat hermes <command>` | Forward a command to Hermes without opening the dashboard |
 | macOS/Linux | `bash launch.sh hermes <command>` | Forward a command to Hermes without opening the dashboard |
 
-For help and version options on macOS/Linux, use `bash launch.sh --help` or `bash launch.sh --version`. The Windows launcher forwards Hermes arguments; consult its source for launcher-specific options.
+Launcher options `-h`, `--help`, `-v`, `--version` exit immediately with documentation. Standalone subcommands `profile` and `mcp` dispatch directly without requiring runtime extraction or venv reconstruction.
 
 ## Runtime setup
 
@@ -110,27 +110,37 @@ For custom server registration, `--args` consumes the remaining command-line arg
 
 ### S3 sync
 
-Install `boto3` in the Python environment used to run the script, then review the planned upload:
+Review the planned upload offline without requiring AWS credentials or network access:
 
 ```bash
 python tools/sync/s3_sync.py --bucket <bucket> --prefix <prefix> --dry-run
-python tools/sync/s3_sync.py --bucket <bucket> --prefix <prefix> --encrypt --password <passphrase>
+python tools/sync/s3_sync.py --bucket <bucket> --prefix <prefix> --encrypt --dry-run
 ```
 
-Avoid passing secrets on shared systems or in shell histories. See [`../UX_MANAGEMENT.md`](../UX_MANAGEMENT.md) for data-selection and AWS credential notes.
+To execute the actual upload, install `boto3` and provide the passphrase via environment variables (`HERMES_VAULT_PASSWORD`, `HERMES_S3_PASSWORD`, or `S3_SYNC_PASSWORD`) or interactive prompt:
+
+```bash
+python tools/sync/s3_sync.py --bucket <bucket> --prefix <prefix> --encrypt
+```
+
+Individual failures are logged and reported with an exit code of 1 if any file fails. Avoid passing secrets in `--password` command arguments to prevent exposing them in shell history or process tables.
 
 ## Reset scripts
 
-Reset scripts can remove runtime files and, in full mode, user data. Inspect their options and back up `data/` before running.
+Reset scripts can preview actions safely using dry-run flags (`-DryRun` / `--dry-run`), or execute soft/full resets. Back up `data/` before running full resets.
 
 **Windows PowerShell**
 ```powershell
+.\scripts\reset-windows.ps1 -Mode soft -DryRun
+.\scripts\reset-windows.ps1 -Mode full -DryRun
 .\scripts\reset-windows.ps1 -Mode soft
 .\scripts\reset-windows.ps1 -Mode full
 ```
 
 **macOS/Linux**
 ```bash
+bash scripts/reset-unix.sh soft --dry-run
+bash scripts/reset-unix.sh full --dry-run
 bash scripts/reset-unix.sh soft
 bash scripts/reset-unix.sh full
 ```

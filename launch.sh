@@ -82,35 +82,7 @@ HERMES_HOME="${HERMES_HOME_BASE}"
 export PORTABLE_ROOT
 
 # ---------------------------------------------------------------------------
-# 4. Detect platform / architecture (must precede RUNTIME_DIR resolution)
-# ---------------------------------------------------------------------------
-OS_RAW="$(uname -s | tr '[:upper:]' '[:lower:]')"
-ARCH_RAW="$(uname -m | tr '[:upper:]' '[:lower:]')"
-
-case "$OS_RAW" in
-  linux)   PLATFORM="linux" ;;
-  darwin)  PLATFORM="macos" ;;
-  *)       log error "Unsupported OS: $OS_RAW"; exit 1 ;;
-esac
-
-case "$ARCH_RAW" in
-  x86_64|amd64) ARCH="x64" ;;
-  aarch64|arm64) ARCH="arm64" ;;
-  *)             log error "Unsupported architecture: $ARCH_RAW"; exit 1 ;;
-esac
-
-# ---------------------------------------------------------------------------
-# 4b. Derived directories (safe now that PLATFORM/ARCH are known)
-# ---------------------------------------------------------------------------
-readonly CACHE_DIR="${PORTABLE_ROOT}/.cache"
-readonly SRC_DIR="${PORTABLE_ROOT}/src"
-readonly RUNTIME_DIR="${CACHE_DIR}/runtimes/${PLATFORM}-${ARCH}"
-readonly LOG_DIR="${CACHE_DIR}/logs"
-readonly LOGFILE="${LOG_DIR}/launch.log"
-mkdir -p "$LOG_DIR"
-
-# ---------------------------------------------------------------------------
-# 5. Small CLI – help, version, silent, forced‑setup, profile
+# 4. CLI help / version (accessible on any host)
 # ---------------------------------------------------------------------------
 print_help() {
   cat <<EOF
@@ -129,12 +101,57 @@ EOF
 }
 print_version() {
   local hermes_ver="unknown"
-  if [[ -f "${SRC_DIR}/hermes-agent/hermes_cli/__init__.py" ]]; then
-    hermes_ver=$(grep -Po '__version__\s*=\s*"\K[^"]+' "${SRC_DIR}/hermes-agent/hermes_cli/__init__.py" || true)
+  if [[ -f "${PORTABLE_ROOT}/src/hermes-agent/hermes_cli/__init__.py" ]]; then
+    hermes_ver=$(grep -Po '__version__\s*=\s*"\K[^"]+' "${PORTABLE_ROOT}/src/hermes-agent/hermes_cli/__init__.py" || true)
   fi
-  printf "%s\n" "Launcher version: 1.0.0 (2025‑11‑17)"
-  printf "%s\n" "Hermes version:   %s" "$hermes_ver"
+  printf "Launcher version: 1.0.0 (2025‑11‑17)\n"
+  printf "Hermes version:   %s\n" "$hermes_ver"
 }
+
+for arg in "$@"; do
+  case "${arg,,}" in
+    -h|--help)   print_help; exit 0 ;;
+    -v|--version) print_version; exit 0 ;;
+  esac
+done
+
+# ---------------------------------------------------------------------------
+# 4b. Detect platform / architecture (must precede RUNTIME_DIR resolution)
+# ---------------------------------------------------------------------------
+OS_RAW="$(uname -s | tr '[:upper:]' '[:lower:]')"
+ARCH_RAW="$(uname -m | tr '[:upper:]' '[:lower:]')"
+
+PLATFORM="${HERMES_PLATFORM:-}"
+if [[ -z "$PLATFORM" ]]; then
+  case "$OS_RAW" in
+    linux)   PLATFORM="linux" ;;
+    darwin)  PLATFORM="macos" ;;
+    *)       log error "Unsupported OS: $OS_RAW"; exit 1 ;;
+  esac
+fi
+
+ARCH="${HERMES_ARCH:-}"
+if [[ -z "$ARCH" ]]; then
+  case "$ARCH_RAW" in
+    x86_64|amd64) ARCH="x64" ;;
+    aarch64|arm64) ARCH="arm64" ;;
+    *)             log error "Unsupported architecture: $ARCH_RAW"; exit 1 ;;
+  esac
+fi
+
+# ---------------------------------------------------------------------------
+# 4c. Derived directories (safe now that PLATFORM/ARCH are known)
+# ---------------------------------------------------------------------------
+readonly CACHE_DIR="${PORTABLE_ROOT}/.cache"
+readonly SRC_DIR="${PORTABLE_ROOT}/src"
+readonly RUNTIME_DIR="${CACHE_DIR}/runtimes/${PLATFORM}-${ARCH}"
+readonly LOG_DIR="${CACHE_DIR}/logs"
+readonly LOGFILE="${LOG_DIR}/launch.log"
+mkdir -p "$LOG_DIR"
+
+# ---------------------------------------------------------------------------
+# 5. CLI argument handling (silent, forced-setup, profile, hermes forwarding)
+# ---------------------------------------------------------------------------
 OPTION_SILENT=0
 OPTION_PROFILE=""
 while (( $# )); do
@@ -160,6 +177,30 @@ if [[ -n "${OPTION_PROFILE}" ]]; then
     fi
 fi
 export HERMES_HOME
+
+# Direct subcommands that do not require full runtime bootstrap
+if (( $# )); then
+  PYTHON_RUN="python3"
+  if ! python3 --version >/dev/null 2>&1; then
+    if python --version >/dev/null 2>&1; then
+      PYTHON_RUN="python"
+    fi
+  fi
+  case "${1:-}" in
+    mcp)
+      shift
+      log info "Running Hermes MCP Manager ..."
+      "$PYTHON_RUN" "${PORTABLE_ROOT}/tools/mcp/mcp_manager.py" "$@"
+      exit $?
+      ;;
+    profile)
+      shift
+      log info "Running Hermes Profile Manager ..."
+      "$PYTHON_RUN" "${PORTABLE_ROOT}/tools/profiles/profile_manager.py" "$@"
+      exit $?
+      ;;
+  esac
+fi
 
 # ---------------------------------------------------------------------------
 # 6. First‑run (or forced) setup
@@ -274,7 +315,7 @@ fi
 # 9. Unlock encrypted data vault (if encrypted)
 # ---------------------------------------------------------------------------
 if [[ -f "${PORTABLE_ROOT}/scripts/unlock-vault.sh" ]]; then
-  bash "${PORTABLE_ROOT}/scripts/unlock-vault.sh" "${HERMES_HOME}" "python3" "false"
+  bash "${PORTABLE_ROOT}/scripts/unlock-vault.sh" "${HERMES_HOME}" "python3"
   if (( $? != 0 )); then
     log error "Failed to unlock vault or user cancelled."
     exit 1

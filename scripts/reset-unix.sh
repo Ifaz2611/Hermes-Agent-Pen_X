@@ -44,7 +44,19 @@ confirm() {
 }
 
 # --------------------[ Parse arguments ]------------------------------------
-MODE="${1:-}"   # empty = interactive
+DRY_RUN=false
+MODE=""
+
+for arg in "$@"; do
+    case "$arg" in
+        --dry-run|--preview) DRY_RUN=true ;;
+        soft|full) MODE="$arg" ;;
+    esac
+done
+
+if [[ -z "$MODE" && "$DRY_RUN" == "true" ]]; then
+    MODE="soft"
+fi
 
 [[ -z "$MODE" ]] && {
     echo "========================================"
@@ -65,21 +77,23 @@ esac
 
 log "Reset started ($MODE) – version $VERSION"
 
-# --------------------[ Graceful shutdown ]----------------------------------
-LOCK_FILE="$ROOT/data/auth.lock"
-if [[ -f "$LOCK_FILE" ]]; then
-    log "[INFO] Removing auth lock: $LOCK_FILE"
-    rm -f "$LOCK_FILE"
-fi
+if [[ "$DRY_RUN" != "true" ]]; then
+    # --------------------[ Graceful shutdown ]----------------------------------
+    LOCK_FILE="$ROOT/data/auth.lock"
+    if [[ -f "$LOCK_FILE" ]]; then
+        log "[INFO] Removing auth lock: $LOCK_FILE"
+        rm -f "$LOCK_FILE"
+    fi
 
-# Ask before killing the gateway processes
-if confirm "[INFO] Kill any running 'hermes gateway' processes? (y/n) " "y"; then
-    # Use pgrep with a precise name if possible; fallback to pkill
-    if pgrep -f "hermes.*gateway" >/dev/null 2>&1; then
-        log "[INFO] Killing hermes gateway processes ..."
-        pkill -f "hermes.*gateway" || true
-    else
-        log "[INFO] No matching gateway processes found."
+    # Ask before killing the gateway processes
+    if confirm "[INFO] Kill any running 'hermes gateway' processes? (y/n) " "y"; then
+        # Use pgrep with a precise name if possible; fallback to pkill
+        if pgrep -f "hermes.*gateway" >/dev/null 2>&1; then
+            log "[INFO] Killing hermes gateway processes ..."
+            pkill -f "hermes.*gateway" || true
+        else
+            log "[INFO] No matching gateway processes found."
+        fi
     fi
 fi
 
@@ -113,6 +127,12 @@ for f in "${FOLDERS[@]}"; do
     fi
     printf "  - %s (%s)\n" "$f" "$HUMAN"
 done
+
+if [[ "$DRY_RUN" == "true" ]]; then
+    echo ""
+    log "[DRY-RUN] Preview completed. No changes were made."
+    exit 0
+fi
 
 if [[ "$MODE" == "full" && -d "$ROOT/data" ]]; then
     echo ""

@@ -180,20 +180,25 @@ log_file=""
 # ------------------------------------------------------------
 # Platform detection (unified)
 # ------------------------------------------------------------
-OS_RAW="$(uname -s)"
-ARCH_OS="$(uname -m)"
-case "$OS_RAW" in
-    Linux*)   PLATFORM="linux" ;;
-    Darwin*)  PLATFORM="macos" ;;
-    *)        fatal "[WARN] Unsupported OS: $OS_RAW" ;;
-esac
+PLATFORM="${HERMES_PLATFORM:-}"
+if [ -z "$PLATFORM" ]; then
+    OS_RAW="$(uname -s)"
+    case "$OS_RAW" in
+        Linux*)   PLATFORM="linux" ;;
+        Darwin*)  PLATFORM="macos" ;;
+        *)        fatal "[WARN] Unsupported OS: $OS_RAW" ;;
+    esac
+fi
 
-# Normalise arch (same logic you already have)
-case "$ARCH_OS" in
-    x86_64|amd64)   ARCH="x64" ;;
-    aarch64|arm64)  ARCH="arm64" ;;
-    *)               fatal "Unsupported architecture: $ARCH_OS" ;;
-esac
+ARCH_OS="${HERMES_ARCH_OS:-$(uname -m)}"
+ARCH="${HERMES_ARCH:-}"
+if [ -z "$ARCH" ]; then
+    case "$ARCH_OS" in
+        x86_64|amd64)   ARCH="x64" ;;
+        aarch64|arm64)  ARCH="arm64" ;;
+        *)              fatal "Unsupported architecture: $ARCH_OS" ;;
+    esac
+fi
 
 # Derived runtime paths (platform is now known).
 RUNTIME_DIR="$CACHE_DIR/runtimes/${PLATFORM}-${ARCH}"

@@ -6,7 +6,6 @@
 
 DATA_DIR="${1:-.\/data}"
 PYTHON_EXE="${2:-python3}"
-USE_HARDWARE_TOKEN="${3:-false}"
 
 # Check if vault is encrypted
 test_vault_encrypted() {
@@ -32,25 +31,19 @@ test_vault_encrypted() {
 unlock_data_vault() {
     local data_path="$1"
     local python_path="$2"
-    local use_hardware_token="$3"
     
-    echo -e "\033[36m🔐 Hermes Agent vault detected.\033[0m"
+    echo -e "\033[36m[VAULT] Hermes Agent vault detected.\033[0m"
     echo ""
     
-    local hardware_token_arg=""
-    if [[ "$use_hardware_token" == "true" ]]; then
-        hardware_token_arg="--hardware-token"
-    fi
-    
     # Call the security module to decrypt
-    "$python_path" -m security decrypt "$data_path" $hardware_token_arg
+    "$python_path" -m security decrypt "$data_path"
     local exit_code=$?
     
     if [[ $exit_code -eq 0 ]]; then
-        echo -e "\033[32m✓ Vault unlocked successfully!\033[0m"
+        echo -e "\033[32m[OK] Vault unlocked successfully!\033[0m"
         return 0
     else
-        echo -e "\033[31m✗ Failed to unlock vault.\033[0m"
+        echo -e "\033[31m[ERROR] Failed to unlock vault.\033[0m"
         return 1
     fi
 }
@@ -64,13 +57,13 @@ fi
 if test_vault_encrypted "$DATA_DIR"; then
     echo ""
 
-    if ! unlock_data_vault "$DATA_DIR" "$PYTHON_EXE" "$USE_HARDWARE_TOKEN"; then
+    if ! unlock_data_vault "$DATA_DIR" "$PYTHON_EXE"; then
         echo ""
         echo -e "\033[31mCannot proceed without unlocking the vault.\033[0m"
         read -p "Retry? (y/n) " retry
 
         if [[ "$retry" == "y" || "$retry" == "Y" ]]; then
-            if ! unlock_data_vault "$DATA_DIR" "$PYTHON_EXE" "$USE_HARDWARE_TOKEN"; then
+            if ! unlock_data_vault "$DATA_DIR" "$PYTHON_EXE"; then
                 exit 1
             fi
         else

@@ -1,4 +1,9 @@
-"""hardware_token.py — Yubikey / hardware-token support with safe fallbacks."""
+"""hardware_token.py — YubiKey / hardware token diagnostics and PIN utilities.
+
+Note: These utilities provide standalone device detection and setup helpers.
+They do not protect the data vault, derive encryption keys, or provide passwordless
+vault unlocking. Vault security remains password-based.
+"""
 
 from __future__ import annotations
 

@@ -5,11 +5,13 @@ This guide documents the security utilities included in Hermes Agent Pendrive_X.
 ## Current capabilities
 
 - Password-based encryption and decryption of selected files in a data directory.
-- Vault status reporting.
-- YubiKey availability/status checks and a helper that invokes YubiKey PIN setup.
+- Atomic file writes and transactional backups to protect against corruption during lock/unlock.
+- Safe rollback on operation failure and automatic recovery for interrupted updates.
+- Vault status and pending recovery reporting.
+- Diagnostic YubiKey availability/status checks and PIN setup helper (independent of vault).
 - Automatic vault-unlock helpers used by the platform launchers.
 
-**Important YubiKey limitation:** YubiKey is not currently part of the vault key derivation or unlock flow. The `--hardware-token` option records a setting in `.vault`; it does not make vault access passwordless or require a YubiKey. Do not treat the token flag as an additional cryptographic factor.
+**YubiKey and hardware tokens:** The vault is strictly password-based. YubiKey and hardware-token utilities are standalone diagnostics only (`python -m security token` / `yubikey`); they are NOT used in vault key derivation and do not provide passwordless unlocking. Misleading hardware-token metadata flags have been removed from the vault CLI. Do not advertise or assume passwordless vault unlocking.
 
 ## What is encrypted
 
@@ -47,9 +49,12 @@ Run commands from the repository root after setting `PYTHONPATH` as above:
 python -m security encrypt data/
 python -m security status data/
 python -m security decrypt data/
+python -m security recover data/
 ```
 
-Encryption prompts for a password and confirmation if `--password` is omitted; the interactive prompt requires at least eight characters. Decryption prompts for the existing password if `--password` is omitted. Prefer interactive prompts over putting passwords in command arguments, which can expose them in shell history or process listings. Use a strong, unique password.
+Encryption prompts for a password and confirmation if `--password` is omitted; the interactive prompt requires at least eight characters. Decryption prompts for the existing password if `--password` is omitted. You may also specify the password via the `HERMES_VAULT_PASSWORD` environment variable. Avoid passing passwords directly in `--password` command arguments to prevent exposing them in shell history, process listings, or logs. Use a strong, unique password.
+
+All lock and unlock operations are atomic and transactional. A backup is staged in `.vault_backup` during an active operation and cleared upon success. If an error occurs, the vault rolls back immediately. If the process is killed partway through, run `python -m security recover data/` to restore the pre-operation state cleanly.
 
 The launchers check the selected data directory and invoke the unlock helper when the vault metadata indicates that it is locked. Keep an independent backup of the password: there is no password reset or recovery mechanism.
 
@@ -82,7 +87,7 @@ Supported mode labels are `otp`, `fido2`, and `piv`. Device detection depends on
 
 If you forget the password, the encrypted files cannot be recovered by this project. Restore from a known-good backup. Do not delete encrypted data until a restored copy has been verified.
 
-The S3 utility can encrypt files before uploading, but it does not provide key management or recovery. Review its options and destination before use; AWS credentials should come from a protected AWS profile or the standard AWS credential provider chain, not from source code.
+The S3 utility (`tools/sync/s3_sync.py`) can encrypt files before uploading. It supports offline dry runs (`--dry-run`) without requiring AWS credentials or network access. Encryption passwords can be passed securely via `HERMES_VAULT_PASSWORD`, `HERMES_S3_PASSWORD`, or `S3_SYNC_PASSWORD`. Any individual file encryption or upload failures are tracked and reported with a non-zero exit code. AWS credentials should come from the standard AWS credential chain (environment variables or `~/.aws/credentials`), never from command arguments or source code.
 
 ## Troubleshooting
 

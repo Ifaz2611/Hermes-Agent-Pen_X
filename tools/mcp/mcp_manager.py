@@ -132,7 +132,7 @@ def install_server(name):
         print(f"Server '{name}' not found in available list. Use 'add' for custom servers.", file=sys.stderr)
         raise SystemExit(1)
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description="Hermes MCP Manager")
     subparsers = parser.add_subparsers(dest="command", help="Commands")
 
@@ -162,7 +162,7 @@ def main():
     remove_parser = subparsers.add_parser("remove", help="Remove an MCP server")
     remove_parser.add_argument("name", help="Name of the server to remove")
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if args.command == "list":
         list_servers()
@@ -174,7 +174,7 @@ def main():
         env = {}
         for item in (args.env or []):
             if "=" not in item:
-                print(f"Ignoring malformed --env entry (want KEY=VALUE): {item}", file=sys.stderr)
+                print("Ignoring malformed --env entry (expected KEY=VALUE format).", file=sys.stderr)
                 continue
             key, value = item.split("=", 1)
             env[key] = value

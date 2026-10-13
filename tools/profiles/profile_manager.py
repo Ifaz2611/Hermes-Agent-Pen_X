@@ -6,10 +6,13 @@ Profiles are stored in the data/profiles directory.
 
 import argparse
 import os
+import re
 import shutil
+import sys
 from pathlib import Path
 
-def get_portable_root():
+
+def get_portable_root() -> Path:
     env = os.environ.get('PORTABLE_ROOT')
     if env:
         return Path(env)
@@ -17,11 +20,59 @@ def get_portable_root():
     # the current working directory (launchers may invoke us from anywhere).
     return Path(__file__).resolve().parents[2]
 
-def get_data_dir():
+
+def get_data_dir() -> Path:
     return get_portable_root() / 'data'
 
-def get_profiles_dir():
+
+def get_profiles_dir() -> Path:
     return get_data_dir() / 'profiles'
+
+
+def validate_profile_name(name: str) -> str:
+    """Validate and sanitize a profile name.
+
+    Rejects absolute paths, traversal segments, path separators, reserved device names,
+    and invalid characters before any file-system operation.
+    """
+    if not name or not isinstance(name, str) or not name.strip():
+        raise ValueError("Profile name cannot be empty or whitespace.")
+
+    name = name.strip()
+
+    # Reject path separators
+    if '/' in name or '\\' in name:
+        raise ValueError(f"Invalid profile name {name!r}: path separators ('/' or '\\') are not allowed.")
+
+    # Reject traversal segments
+    if name in ('.', '..') or '..' in name:
+        raise ValueError(f"Invalid profile name {name!r}: traversal segments are not allowed.")
+
+    # Reject absolute paths (POSIX and Windows drive letters)
+    if Path(name).is_absolute() or os.path.isabs(name) or (len(name) > 1 and name[1] == ':'):
+        raise ValueError(f"Invalid profile name {name!r}: absolute paths are not allowed.")
+
+    # Allowed character pattern: must begin with alphanumeric, contain only safe chars, no trailing dot
+    if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_.-]*$', name) or name.endswith('.'):
+        raise ValueError(
+            f"Invalid profile name {name!r}: must start with an alphanumeric character and "
+            "contain only letters, digits, underscores, dashes, and internal periods."
+        )
+
+    # Windows reserved device names (CON, PRN, AUX, NUL, COM1-9, LPT1-9)
+    reserved = {'CON', 'PRN', 'AUX', 'NUL'} | {f'COM{i}' for i in range(1, 10)} | {f'LPT{i}' for i in range(1, 10)}
+    base_name = name.split('.')[0].upper()
+    if base_name in reserved:
+        raise ValueError(f"Invalid profile name {name!r}: reserved device name.")
+
+    # Check that the resolved path stays strictly within the profiles directory
+    profiles_dir = get_profiles_dir().resolve()
+    target_path = (profiles_dir / name).resolve()
+    if target_path.parent != profiles_dir:
+        raise ValueError(f"Invalid profile name {name!r}: path escapes profiles directory.")
+
+    return name
+
 
 def list_profiles():
     profiles_dir = get_profiles_dir()
@@ -31,20 +82,22 @@ def list_profiles():
 
     print(f"{'Profile Name':<20} {'Path':<40}")
     print("-" * 60)
-    for item in profiles_dir.iterdir():
+    for item in sorted(profiles_dir.iterdir()):
         if item.is_dir():
             print(f"{item.name:<20} {str(item):<40}")
 
-def create_profile(name):
+
+def create_profile(name: str) -> bool:
+    name = validate_profile_name(name)
     profiles_dir = get_profiles_dir()
     profile_path = profiles_dir / name
-    
+
     if profile_path.exists():
-        print(f"Profile '{name}' already exists.")
-        return
+        print(f"Profile '{name}' already exists.", file=sys.stderr)
+        return False
 
     profile_path.mkdir(parents=True, exist_ok=True)
-    
+
     # Copy default files if they exist in data root.
     # soul.md is matched case-insensitively (SOUL.md on Windows, soul.md on Linux).
     data_dir = get_data_dir()
@@ -70,19 +123,30 @@ def create_profile(name):
         print(f"Created default soul.md for profile '{name}'")
 
     print(f"Profile '{name}' created at {profile_path}")
+    return True
 
-def delete_profile(name):
+
+def delete_profile(name: str) -> bool:
+    name = validate_profile_name(name)
     profiles_dir = get_profiles_dir()
     profile_path = profiles_dir / name
-    
-    if not profile_path.exists():
-        print(f"Profile '{name}' does not exist.")
-        return
+
+    if not profile_path.exists() or not profile_path.is_dir():
+        print(f"Profile '{name}' does not exist.", file=sys.stderr)
+        return False
+
+    # Safety check: never delete profiles_dir or data_dir
+    resolved_profile = profile_path.resolve()
+    if resolved_profile == profiles_dir.resolve() or resolved_profile == get_data_dir().resolve():
+        print(f"Cannot delete protected directory: {profile_path}", file=sys.stderr)
+        return False
 
     shutil.rmtree(profile_path)
     print(f"Profile '{name}' deleted.")
+    return True
 
-def main():
+
+def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Hermes Profile Manager")
     subparsers = parser.add_subparsers(dest="command", help="Commands")
 
@@ -97,16 +161,25 @@ def main():
     delete_parser = subparsers.add_parser("delete", help="Delete a profile")
     delete_parser.add_argument("name", help="Name of the profile to delete")
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
-    if args.command == "list":
-        list_profiles()
-    elif args.command == "create":
-        create_profile(args.name)
-    elif args.command == "delete":
-        delete_profile(args.name)
-    else:
-        parser.print_help()
+    try:
+        if args.command == "list":
+            list_profiles()
+            return 0
+        elif args.command == "create":
+            ok = create_profile(args.name)
+            return 0 if ok else 1
+        elif args.command == "delete":
+            ok = delete_profile(args.name)
+            return 0 if ok else 1
+        else:
+            parser.print_help()
+            return 2
+    except ValueError as err:
+        print(f"Error: {err}", file=sys.stderr)
+        return 1
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
