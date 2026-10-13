@@ -128,6 +128,66 @@ New-Item -ItemType Directory -Force -Path $RuntimeDir,$SrcDir,$BinDir,$TempDir |
 $global:TempDir = $TempDir   # make it visible to the trap
 
 # -------------------------------------------------------------------------
+# First-run progress + cancellation handling (P2 UX)
+# -------------------------------------------------------------------------
+# setup-progress.json mirrors the Unix script so the Electron UI can show
+# stages. setup-cancelled.flag marks an interrupted run; ready.flag is only
+# written on full success so the next launch resumes recoverably. Logs are
+# always preserved.
+$ProgressFile   = Join-Path $RuntimeDir 'setup-progress.json'
+$CancelledFlag  = Join-Path $RuntimeDir 'setup-cancelled.flag'
+$ReadyFlagPath  = Join-Path $RuntimeDir 'ready.flag'
+$global:SetupStage = 'starting'
+$global:SetupPercent = 0
+$global:SetupDone = $false
+$SetupStageOrder = @('python','node','uv','rg','hermes-source','venv','python-deps','telegram-deps','security-deps','playwright','done')
+
+function Write-SetupProgress {
+    param([string]$Stage, [int]$Percent, [string]$Message)
+    $global:SetupStage = $Stage
+    $global:SetupPercent = $Percent
+    $stages = @()
+    $seen = $false
+    foreach ($s in $SetupStageOrder) {
+        $status = 'pending'
+        if ($s -eq $Stage) { $status = 'active'; $seen = $true }
+        elseif (-not $seen) { $status = 'done' }
+        if ($global:SetupDone) { $status = 'done' }
+        $stages += @{ name = $s; status = $status; done = ($status -eq 'done') }
+    }
+    $obj = @{
+        stage = $Stage; percent = $Percent; message = $Message
+        updated_at = (Get-Date -UFormat "%Y-%m-%dT%H:%M:%SZ"); stages = $stages
+    }
+    try { $obj | ConvertTo-Json -Depth 5 | Set-Content -Path $ProgressFile -Encoding utf8 } catch { }
+}
+
+function Write-CancelledState {
+    param([string]$Reason)
+    # Preserve logs; never leave a partial ready.flag behind.
+    try { if (Test-Path $ReadyFlagPath) { Remove-Item $ReadyFlagPath -Force -ErrorAction SilentlyContinue } } catch { }
+    try {
+        @{ cancelled = $true; stage = $global:SetupStage; reason = $Reason; at = (Get-Date -UFormat "%Y-%m-%dT%H:%M:%SZ") } |
+            ConvertTo-Json | Set-Content -Path $CancelledFlag -Encoding utf8
+    } catch { }
+    try { Write-SetupProgress -Stage $global:SetupStage -Percent $global:SetupPercent -Message "Cancelled at $($global:SetupStage): $Reason Logs preserved — re-run setup to resume." } catch { }
+    try { Log-Entry WARN "Setup cancelled at stage $($global:SetupStage): $Reason Logs preserved; next launch will resume (recoverable state)." } catch { }
+}
+
+# Fresh attempt clears any stale cancellation marker (re-created only on failure).
+try { if (Test-Path $CancelledFlag) { Remove-Item $CancelledFlag -Force -ErrorAction SilentlyContinue } } catch { }
+
+# Ctrl-C / console cancel: record a recoverable cancelled state instead of a corrupt half-install.
+try {
+    [Console]::TreatControlCAsInput = $false
+    [Console]::CancelKeyPress += {
+        param($sender, $e)
+        $e.Cancel = $true
+        Write-CancelledState -Reason 'Ctrl-C pressed.'
+    }
+} catch { }
+
+# -------------------------------------------------------------------------
 # Helper – Download a file (curl > Invoke‑WebRequest > fallback)
 # -------------------------------------------------------------------------
 function Download-File {
@@ -293,6 +353,7 @@ if ($DryRun) {
 
 $CurrentManifest = Read-Manifest
 
+try {
 # -------------------------------------------------------------------------
 # 1️⃣ Portable Python
 # -------------------------------------------------------------------------
@@ -310,6 +371,7 @@ function Install-Python {
     Ensure-BinLink -SourceBinPath (Join-Path $dest 'python.exe') -LinkName 'python.exe'
     Log-Entry INFO "Python $($info.version) installed."
 }
+Write-SetupProgress -Stage 'python' -Percent 5 -Message 'Downloading Python runtime…'
 Install-Python
 
 # -------------------------------------------------------------------------
@@ -343,6 +405,7 @@ function Install-Node {
     }
     Log-Entry INFO "Node.js $($info.version) installed."
 }
+Write-SetupProgress -Stage 'node' -Percent 20 -Message 'Downloading Node.js…'
 Install-Node
 
 # -------------------------------------------------------------------------
@@ -361,6 +424,7 @@ function Install-Uv {
     Ensure-BinLink -SourceBinPath (Join-Path $dest 'uv.exe') -LinkName 'uv.exe'
     Log-Entry INFO "uv $($info.version) installed."
 }
+Write-SetupProgress -Stage 'uv' -Percent 32 -Message 'Installing uv…'
 if (-not $SkipUv) { Install-Uv }
 
 # -------------------------------------------------------------------------
@@ -386,6 +450,7 @@ function Install-Rg {
         Log-Entry WARN "ripgrep binary not found after extraction."
     }
 }
+Write-SetupProgress -Stage 'rg' -Percent 40 -Message 'Installing ripgrep…'
 Install-Rg
 
 # -------------------------------------------------------------------------
@@ -448,6 +513,7 @@ function Install-HermesSource {
     Move-Item -LiteralPath $srcSub.FullName -Destination $finalSrc -Force
     Log-Entry INFO "Hermes source extracted to $finalSrc"
 }
+Write-SetupProgress -Stage 'hermes-source' -Percent 50 -Message 'Fetching Hermes source…'
 Install-HermesSource
 
 # -------------------------------------------------------------------------
@@ -469,6 +535,7 @@ function Create-Venv {
     $env:Path += ";$venvDir\Scripts"
     Log-Entry INFO "Virtual environment at $venvDir is ready."
 }
+Write-SetupProgress -Stage 'venv' -Percent 62 -Message 'Creating virtual environment…'
 Create-Venv
 
 # -------------------------------------------------------------------------
@@ -498,6 +565,7 @@ function Install-PythonDeps {
         Invoke-WithLog -Label "pip install (fallback)" -ScriptBlock $pipCmd
     }
 }
+Write-SetupProgress -Stage 'python-deps' -Percent 70 -Message 'Installing core Python dependencies…'
 Install-PythonDeps
 
 # -------------------------------------------------------------------------
@@ -521,6 +589,7 @@ function Install-MessagingDeps {
         Log-Entry INFO "Telegram deps installed via pip."
     }
 }
+Write-SetupProgress -Stage 'telegram-deps' -Percent 80 -Message 'Installing messaging dependencies…'
 Install-MessagingDeps
 
 # -------------------------------------------------------------------------
@@ -548,6 +617,7 @@ function Install-SecurityDeps {
         Log-Entry INFO "Security deps installed via pip."
     }
 }
+Write-SetupProgress -Stage 'security-deps' -Percent 88 -Message 'Installing security dependencies…'
 Install-SecurityDeps
 
 # -------------------------------------------------------------------------
@@ -566,10 +636,11 @@ function Install-Playwright {
         Log-Entry WARN "Playwright installation failed – web‑tools will be limited."
     }
 }
+Write-SetupProgress -Stage 'playwright' -Percent 94 -Message 'Installing Playwright browsers…'
 if (-not $SkipPlaywright) { Install-Playwright }
 
 # -------------------------------------------------------------------------
-# 📦 Mark the runtime as ready + write manifest
+# 📦 Mark the runtime as ready + write manifest (only on full success)
 # -------------------------------------------------------------------------
 $readyFlag = Join-Path $RuntimeDir 'ready.flag'
 "" | Set-Content -Path $readyFlag -Encoding utf8
@@ -586,11 +657,19 @@ $manifestInfo = @{
     playwright = if ($SkipPlaywright) { $null } else { 'Chromium' }
 }
 Write-Manifest -ComponentInfo $manifestInfo
+$global:SetupDone = $true
+Write-SetupProgress -Stage 'done' -Percent 100 -Message 'Setup completed.'
 
 # -------------------------------------------------------------------------
 # 🧹 Final cleanup (temp dir was removed by the trap)
 # -------------------------------------------------------------------------
 Log-Entry INFO "Runtime setup completed."
+} catch {
+    $msg = $_.Exception.Message
+    Log-Entry ERROR "Setup failed at stage $($global:SetupStage): $msg Logs preserved at $LogFile."
+    Write-CancelledState -Reason $msg
+    throw
+}
 
 # -------------------------------------------------------------------------
 # 🚀 Optional auto‑launch

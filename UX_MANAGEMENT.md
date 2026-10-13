@@ -12,7 +12,7 @@ npm install
 npm start
 ```
 
-The health action runs `tools/doctor/export_health.py` and loads the dashboard. The exporter writes `data/health.json` by default. The report can include local paths, Python version, vault status, log excerpts, and optional API-cost data; review the output before sharing it.
+The health action runs `tools/doctor/export_health.py` and loads the dashboard. The exporter writes `data/health.json` by default. The report includes an actionable `health_checks` checklist (missing runtimes, setup state, vault state, log findings with fix hints), runtime/manifest status, setup configuration, vault messages including pending-recovery warnings, and tailed excerpts of gateway/launch/setup logs with error lines surfaced first. The dashboard renders these checks as a status table plus runtime, vault, and log sections, with an offline-safe storage table when charts cannot load. The report can include local paths, Python version, vault status, log excerpts, and optional API-cost data; review the output before sharing it.
 
 ## Health report
 
@@ -36,11 +36,20 @@ Profiles are stored under `data/profiles/`. The profile manager supports listing
 
 ```bash
 python tools/profiles/profile_manager.py list
+python tools/profiles/profile_manager.py list --json
 python tools/profiles/profile_manager.py create <name>
 python tools/profiles/profile_manager.py delete <name>
 ```
 
+The Electron launcher exposes the same workflow: a profile selector (switch persists to `data/active-profile.json` and is used for the next launch), a create field with name validation, and a two-step delete confirmation (acknowledgement checkbox plus re-typing the exact profile name). The CLI validates names before any filesystem change; the UI additionally blocks deletion until both confirmation steps pass.
+
 The launcher supports selecting a profile: `launch.bat /profile <name>` on Windows and `bash launch.sh --profile <name>` on macOS/Linux. A profile may contain credentials and settings, so apply the same protection and backup practices as for `data/`.
+
+## Accessibility and first-run behavior
+
+The launcher and dashboard windows support full keyboard navigation (Tab/Shift-Tab, Enter/Space, Esc closes the delete dialog), always-visible focus outlines, `role="status"`/`role="alert"` live regions for readable error messages, and a persisted high-contrast theme (also honoring the OS `prefers-contrast` setting).
+
+First-run setup reports staged progress to `setup-progress.json` (python → node → uv → ripgrep → source → venv → deps → browsers) and tails `setup.log`/`install.log`. Cancellation (Ctrl-C, the UI Cancel button, or a failed stage) preserves all logs, removes any partial `ready.flag`, and writes `setup-cancelled.flag`, so the next launch simply resumes — check the setup section of the launcher or the dashboard for the recoverable-state message.
 
 ## S3 sync
 

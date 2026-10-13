@@ -74,17 +74,24 @@ def validate_profile_name(name: str) -> str:
     return name
 
 
-def list_profiles():
+def list_profiles(as_json: bool = False):
     profiles_dir = get_profiles_dir()
-    if not profiles_dir.exists():
+    names = []
+    if profiles_dir.exists():
+        names = sorted([p.name for p in profiles_dir.iterdir() if p.is_dir()])
+    if as_json:
+        import json as _json
+        print(_json.dumps([{"name": n, "path": str(profiles_dir / n)} for n in names]))
+        return names
+    if not profiles_dir.exists() or not names:
         print("No profiles found. Using default 'data' directory.")
-        return
+        return names
 
     print(f"{'Profile Name':<20} {'Path':<40}")
     print("-" * 60)
-    for item in sorted(profiles_dir.iterdir()):
-        if item.is_dir():
-            print(f"{item.name:<20} {str(item):<40}")
+    for name in names:
+        print(f"{name:<20} {str(profiles_dir / name):<40}")
+    return names
 
 
 def create_profile(name: str) -> bool:
@@ -151,7 +158,9 @@ def main(argv=None) -> int:
     subparsers = parser.add_subparsers(dest="command", help="Commands")
 
     # List command
-    subparsers.add_parser("list", help="List all profiles")
+    list_parser = subparsers.add_parser("list", help="List all profiles")
+    list_parser.add_argument("--json", action="store_true",
+                             help="Emit a JSON array of {name, path} objects")
 
     # Create command
     create_parser = subparsers.add_parser("create", help="Create a new profile")
@@ -160,12 +169,14 @@ def main(argv=None) -> int:
     # Delete command
     delete_parser = subparsers.add_parser("delete", help="Delete a profile")
     delete_parser.add_argument("name", help="Name of the profile to delete")
+    delete_parser.add_argument("--yes", action="store_true",
+                               help="Required explicit confirmation flag for scripting")
 
     args = parser.parse_args(argv)
 
     try:
         if args.command == "list":
-            list_profiles()
+            list_profiles(as_json=getattr(args, "json", False))
             return 0
         elif args.command == "create":
             ok = create_profile(args.name)

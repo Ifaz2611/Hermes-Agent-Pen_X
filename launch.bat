@@ -198,21 +198,35 @@ if defined CMD_ACTION (
     )
 )
 
-:: 4. FirstÃÃÃ'run runtime download (Always against USB root)
+:: 4. First-run runtime download with staged progress + recoverable cancel
+::    setup-windows.ps1 writes setup-progress.json per stage and preserves
+::    install.log on failure/cancel; we never leave a partial ready.flag.
 :: -------------------------------------------------------------------
 if not exist "%RUNTIME_DIR%\ready.flag" (
+    if exist "%RUNTIME_DIR%\setup-cancelled.flag" (
+        if %SILENT%==0 echo %YEL%[WARN]%RST% Previous setup was cancelled - resuming; logs preserved.
+    )
     if %SILENT%==0 (
         echo.
-        echo %BGB% HERMES Pendrive_X ÃÃÃ" FirstÃÃÃ'Run Setup %RST%
-        echo %BGB%    ~600ÃÃÃMB of runtimes will be downloaded. %RST%
+        echo %BGB% HERMES Pendrive_X - First-Run Setup %RST%
+        echo %BGB%    ~600MB of runtimes will be downloaded in stages. %RST%
+        echo %BGB%    Stages: python -^> node -^> uv -^> rg -^> source -^> venv -^> deps %RST%
+        echo %BGB%    Progress: %RUNTIME_DIR%\setup-progress.json; Log: install.log %RST%
+        echo %BGB%    Ctrl-C is safe - logs are kept and next launch resumes. %RST%
         echo.
     )
     powershell -NoProfile -ExecutionPolicy Bypass ^
         -Command "& { .\scripts\setup-windows.ps1 -Root \"%PORTABLE_ROOT%\" }" ^
         2>&1 | findstr /V "^$"
     if errorlevel 1 (
-        call :MkErr "RuntimeÃÃÃ'setup script failed with exit code %ERRORLEVEL%. Abort."
+        if exist "%RUNTIME_DIR%\ready.flag" del /F /Q "%RUNTIME_DIR%\ready.flag" >nul 2>&1
+        if %SILENT%==0 (
+            echo %YEL%[WARN]%RST% Setup did not complete. Logs preserved at %RUNTIME_DIR%\install.log.
+            echo %YEL%[WARN]%RST% Recoverable: just run launch.bat again to resume - no manual cleanup needed.
+        )
+        call :MkErr "Runtime setup failed. See %RUNTIME_DIR%\install.log; re-run launch.bat to resume."
     )
+    if exist "%RUNTIME_DIR%\setup-cancelled.flag" del /F /Q "%RUNTIME_DIR%\setup-cancelled.flag" >nul 2>&1
 )
 
 :: -------------------------------------------------------------------

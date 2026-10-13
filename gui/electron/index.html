@@ -1,20 +1,130 @@
 <!doctype html>
-<html>
+<html lang="en">
   <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Hermes Launcher</title>
     <style>
-      body { font-family: Arial, sans-serif; padding: 20px }
-      button { display:block; width:100%; margin:10px 0; padding:12px; font-size:16px }
+      :root {
+        --bg: #ffffff; --fg: #1a1a1a; --muted: #555; --accent: #0b5fff;
+        --card: #f6f6f6; --border: #ccc; --ok: #0a7b2e; --warn: #9a5b00; --err: #b00020;
+      }
+      [data-theme="high-contrast"] {
+        --bg: #000; --fg: #fff; --muted: #e8e8e8; --accent: #ffff00;
+        --card: #111; --border: #fff; --ok: #00ff88; --warn: #ffd600; --err: #ff5252;
+      }
+      * { box-sizing: border-box }
+      body { font-family: Arial, Helvetica, sans-serif; background: var(--bg); color: var(--fg); padding: 20px; line-height: 1.45; margin: 0 }
+      .skip-link { position: absolute; left: -9999px; top: 0; background: var(--accent); color: #000; padding: 8px 12px; z-index: 100 }
+      .skip-link:focus { left: 8px; top: 8px }
+      :focus { outline: 3px solid var(--accent); outline-offset: 2px }
+      [data-theme="high-contrast"] :focus { outline: 3px solid var(--accent) }
+      header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap }
+      main { max-width: 760px; margin: 0 auto }
+      section.card { border: 1px solid var(--border); background: var(--card); padding: 14px; margin: 12px 0; border-radius: 8px }
+      [data-theme="high-contrast"] section.card { background: #111 }
+      h1 { font-size: 1.4rem; margin: 0 }
+      h2 { font-size: 1.1rem; margin: 0 0 8px 0 }
+      button, input, select { font-size: 1rem; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border) }
+      button { cursor: pointer; background: var(--bg); color: var(--fg); margin: 4px 0 }
+      button.primary { background: var(--accent); color: #000; border-color: var(--accent); font-weight: bold }
+      [data-theme="high-contrast"] button.primary { color: #000 }
+      body:not([data-theme="high-contrast"]) button.primary { color: #fff }
+      body:not([data-theme="high-contrast"]) .skip-link { color: #fff }
+      ul { padding-left: 20px }
+      li { margin: 6px 0 }
+      .status { padding: 10px; border-radius: 6px; border: 1px solid var(--border); margin: 8px 0 }
+      .status[role="alert"] { border-color: var(--err) }
+      .ok { color: var(--ok); font-weight: bold }
+      .warn { color: var(--warn); font-weight: bold }
+      .err { color: var(--err); font-weight: bold }
+      pre.log { background: var(--bg); border: 1px solid var(--border); padding: 8px; max-height: 160px; overflow: auto; white-space: pre-wrap; font-size: 0.85rem }
+      .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center }
+      .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0) }
+      dialog { border: 2px solid var(--border); border-radius: 8px; padding: 16px; background: var(--bg); color: var(--fg); max-width: 480px }
+      dialog::backdrop { background: rgba(0,0,0,0.5) }
+      @media (prefers-contrast: more) {
+        :root { --border: #000 }
+        :focus { outline-width: 4px }
+      }
     </style>
   </head>
   <body>
-    <h2>Hermes Launcher</h2>
-    <p>Simple GUI wrapper for the Hermes Agent.</p>
-    <button id="launch">Launch Hermes (terminal)</button>
-    <button id="doctor">Open Health Dashboard (TUI)</button>
-    <button id="data">Open data/ folder</button>
+    <a class="skip-link" href="#main">Skip to main content</a>
+    <main id="main" aria-labelledby="title">
+      <header>
+        <div>
+          <h1 id="title">Hermes Launcher</h1>
+          <p>Portable launcher with health checks, profiles, and setup progress.</p>
+        </div>
+        <button id="theme" type="button" aria-pressed="false" title="Toggle high-contrast theme">High-contrast: off</button>
+      </header>
 
+      <div id="status" class="status" role="status" aria-live="polite">Ready.</div>
+      <div id="errors" role="alert" aria-live="assertive"></div>
+
+      <section class="card" aria-labelledby="launch-h">
+        <h2 id="launch-h">Launch</h2>
+        <div class="row">
+          <label for="profile-select">Active profile</label>
+          <select id="profile-select" aria-describedby="profile-help">
+            <option value="">Default (data/)</option>
+          </select>
+          <button id="launch" type="button" class="primary">Launch Hermes</button>
+          <button id="doctor" type="button">Open health dashboard</button>
+          <button id="data" type="button">Open data/ folder</button>
+        </div>
+        <p id="profile-help"><small>Switching a profile only changes which data folder Hermes uses. Deleting is under Profiles below and needs confirmation.</small></p>
+      </section>
+
+      <section class="card" aria-labelledby="profiles-h">
+        <h2 id="profiles-h">Profiles</h2>
+        <ul id="profile-list" aria-live="polite"><li>Loading profiles…</li></ul>
+        <div class="row">
+          <label for="new-profile">New profile name</label>
+          <input id="new-profile" type="text" autocomplete="off" placeholder="e.g. work-profile" aria-describedby="name-rules">
+          <button id="create-profile" type="button">Create profile</button>
+        </div>
+        <p id="name-rules"><small>Letters, digits, dashes, underscores, internal periods. Must start with a letter or digit.</small></p>
+      </section>
+
+      <section class="card" aria-labelledby="setup-h">
+        <h2 id="setup-h">First-run setup</h2>
+        <div class="row">
+          <button id="setup-refresh" type="button">Check setup state</button>
+          <button id="setup-run" type="button">Run setup</button>
+          <button id="setup-cancel" type="button">Cancel setup</button>
+        </div>
+        <div id="setup-state" aria-live="polite"><p>Setup state unknown. Press “Check setup state”.</p></div>
+        <h3>Setup log (tail)</h3>
+        <pre id="setup-log" class="log" tabindex="0" aria-label="Setup log tail">No log loaded.</pre>
+      </section>
+
+      <dialog id="delete-dialog" aria-labelledby="delete-title">
+        <h2 id="delete-title">Delete profile?</h2>
+        <p id="delete-text">This permanently removes the profile folder. This cannot be undone.</p>
+        <label for="delete-confirm-text">Type the profile name to confirm:</label>
+        <input id="delete-confirm-text" type="text" autocomplete="off">
+        <div>
+          <input id="delete-confirm-check" type="checkbox">
+          <label for="delete-confirm-check">I understand this deletes profile data.</label>
+        </div>
+        <div class="row">
+          <button id="delete-confirm" type="button" class="primary">Delete permanently</button>
+          <button id="delete-abort" type="button">Keep profile</button>
+        </div>
+        <p id="delete-error" class="err" role="alert" aria-live="assertive"></p>
+      </dialog>
+
+      <section class="card" aria-labelledby="keys-h">
+        <h2 id="keys-h">Keyboard shortcuts</h2>
+        <ul>
+          <li><kbd>Tab</kbd> / <kbd>Shift+Tab</kbd> move between controls; focus is always visible.</li>
+          <li><kbd>Enter</kbd> or <kbd>Space</kbd> activates the focused button.</li>
+          <li><kbd>Esc</kbd> closes the delete dialog without deleting.</li>
+        </ul>
+      </section>
+    </main>
     <script src="renderer.js"></script>
   </body>
 </html>

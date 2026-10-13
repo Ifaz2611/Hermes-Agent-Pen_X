@@ -208,6 +208,69 @@ log_file="${RUNTIME_DIR}/setup.log"
 : > "$log_file"
 
 # ------------------------------------------------------------
+# First-run progress + cancellation handling (P2 UX)
+# ------------------------------------------------------------
+# Stages are reported to setup-progress.json so the Electron UI can show
+# download/setup progress. On INT/TERM the trap preserves logs, removes a
+# partial ready.flag, and writes setup-cancelled.flag so the next launch
+# resumes in a recoverable state.
+SETUP_PROGRESS="${RUNTIME_DIR}/setup-progress.json"
+SETUP_CANCELLED_FLAG="${RUNTIME_DIR}/setup-cancelled.flag"
+CURRENT_STAGE="starting"
+CURRENT_PERCENT=0
+SETUP_DONE=0
+# Ordered stage list for progress display.
+SETUP_STAGES="python node uv ripgrep hermes-source venv python-deps telegram-deps security-deps playwright done"
+
+write_progress() {
+    local stage=$1 percent=$2 message=$3
+    CURRENT_STAGE="$stage"
+    CURRENT_PERCENT="$percent"
+    local stages_json="" first=1
+    # Mark stages up to the current one as done based on known order.
+    local seen_current=0
+    for s in $SETUP_STAGES; do
+        local st="pending"
+        if [ "$s" = "$stage" ]; then st="active"; seen_current=1
+        elif [ "$seen_current" = "0" ]; then st="done"
+        fi
+        [ "$SETUP_DONE" = "1" ] && st="done"
+        if [ $first -eq 1 ]; then first=0; else stages_json="${stages_json},"; fi
+        stages_json="${stages_json}{\"name\": \"$s\", \"status\": \"$st\", \"done\": $([ "$st" = "done" ] && echo true || echo false)}"
+    done
+    # Escape double quotes in message for JSON.
+    message=$(printf '%s' "$message" | sed 's/\\/\\\\/g; s/"/\\"/g')
+    printf '{"stage": "%s", "percent": %s, "message": "%s", "updated_at": "%s", "stages": [%s]}\n' \
+        "$stage" "$percent" "$message" "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" "$stages_json" > "$SETUP_PROGRESS" 2>/dev/null || true
+}
+
+on_setup_exit() {
+    local rc=$?
+    # Preserve the temp dir listing in the log, then clean it (logs stay).
+    if [ "$SETUP_DONE" != "1" ] && [ "$DRY_RUN" != "true" ]; then
+        log WARN "Setup stopped (exit $rc) at stage '$CURRENT_STAGE' — logs preserved at $log_file."
+        # Never leave a half-written ready.flag behind; next launch must re-run setup.
+        rm -f "${RUNTIME_DIR}/ready.flag"
+        printf '{"cancelled": true, "stage": "%s", "exit_code": %s, "at": "%s"}\n' \
+            "$CURRENT_STAGE" "$rc" "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" > "$SETUP_CANCELLED_FLAG" 2>/dev/null || true
+        write_progress "$CURRENT_STAGE" "$CURRENT_PERCENT" "Cancelled at $CURRENT_STAGE (exit $rc). Logs preserved — re-run setup to resume."
+        log INFO "Recoverable state: delete nothing; just re-run setup to resume."
+    fi
+    rm -rf "$TMP_GLOBAL" 2>/dev/null || true
+    # Do not override the original exit code.
+    exit $rc
+}
+
+on_setup_signal() {
+    log WARN "Setup cancellation requested — finishing current file operation, then stopping safely."
+    # Exit via the EXIT trap so logs/flags are handled in one place.
+    exit 130
+}
+
+trap on_setup_signal INT TERM
+trap on_setup_exit EXIT
+
+# ------------------------------------------------------------
 # Build URLs (you can move these into a separate file)
 # ------------------------------------------------------------
 # NOTE: In a real repo you would generate these from a small JSON/YAML.
@@ -476,21 +539,33 @@ EOF
 # ------------------------------------------------------------
 # Initialise the cache directory if it does not exist yet
 mkdir -p "$RUNTIME_DIR" "$BIN_DIR" "$SRC_DIR" "$TMP_GLOBAL"
+# Fresh attempt: clear any stale cancellation marker; it is re-created only on failure.
+rm -f "$SETUP_CANCELLED_FLAG" 2>/dev/null || true
 
-# Call each step – order matters
+# Call each step – order matters (progress percents are approximate).
+write_progress "python" 5 "Downloading Python runtime…"
 install_python
+write_progress "node" 20 "Downloading Node.js…"
 install_node
+write_progress "uv" 32 "Installing uv…"
 install_uv
+write_progress "ripgrep" 40 "Installing ripgrep…"
 install_ripgrep
+write_progress "hermes-source" 50 "Fetching Hermes source…"
 install_hermes_source
 
 # Only after everything is present do we create the venv
+write_progress "venv" 62 "Creating virtual environment…"
 setup_venv
 
 # Dependency installation (core → telegram → security → playwright) can be conditional
+write_progress "python-deps" 70 "Installing core Python dependencies…"
 install_python_deps
+write_progress "telegram-deps" 80 "Installing messaging dependencies…"
 install_telegram_deps
+write_progress "security-deps" 88 "Installing security dependencies…"
 install_security_deps
+write_progress "playwright" 94 "Installing Playwright browsers…"
 install_playwright
 
 # Write lock / manifest flags (skipped in dry-run mode)
@@ -499,6 +574,8 @@ if [[ "$DRY_RUN" = true ]]; then
 else
     touch "$READY_FLAG"
     generate_manifest
+    SETUP_DONE=1
+    write_progress "done" 100 "Setup completed."
 fi
 
 # Cleanup temporary extraction folders

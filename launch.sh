@@ -203,10 +203,18 @@ if (( $# )); then
 fi
 
 # ---------------------------------------------------------------------------
-# 6. First‑run (or forced) setup
+# 6. First‑run (or forced) setup — progress, log preservation, recoverable cancel
 # ---------------------------------------------------------------------------
+# A cancelled/interrupted setup leaves setup-cancelled.flag + full logs behind
+# and never leaves a partial ready.flag, so the next launch simply resumes.
+on_first_run_interrupt() {
+  log warn "Setup interrupted — logs preserved at ${RUNTIME_DIR}/setup.log; next launch will resume (recoverable state)."
+}
 if [[ ! -f "${RUNTIME_DIR}/ready.flag" ]]; then
   log info "First‑run setup required – installing runtimes ..."
+  if [[ -f "${RUNTIME_DIR}/setup-cancelled.flag" ]]; then
+    log warn "Previous setup run was cancelled — resuming (logs preserved)."
+  fi
   cat <<'BANNER'
 
 ======================================================================
@@ -216,13 +224,23 @@ BANNER
 
   echo "  Platform: ${PLATFORM}-${ARCH}"
   echo "  This will download ~600 MB of runtime files."
-  echo "  Please be patient."
+  echo "  Stages: python → node → uv → ripgrep → source → venv → deps → browsers."
+  echo "  Progress: tail ${RUNTIME_DIR}/setup.log or setup-progress.json."
+  echo "  Cancel safely with Ctrl-C — logs are kept and the next launch resumes."
   echo
+  trap on_first_run_interrupt INT TERM
   bash "${PORTABLE_ROOT}/scripts/setup-unix.sh" "${PORTABLE_ROOT}"
-  if (( $? != 0 )); then
-    log error "Runtime‑setup script failed (exit $?)"
+  setup_rc=$?
+  trap - INT TERM
+  if (( setup_rc != 0 )); then
+    # Never leave a partial ready.flag; keep every log for diagnosis.
+    rm -f "${RUNTIME_DIR}/ready.flag" 2>/dev/null || true
+    log error "Runtime‑setup script failed (exit ${setup_rc}). Logs preserved at ${RUNTIME_DIR}/setup.log and ${LOGFILE}."
+    log error "Recoverable: just re-run ./launch.sh to resume setup — nothing needs manual cleanup."
     exit 1
   fi
+  # Successful setup clears any stale cancellation marker.
+  rm -f "${RUNTIME_DIR}/setup-cancelled.flag" 2>/dev/null || true
 else
   log info "Runtime already prepared (ready.flag present)."
 fi
