@@ -190,6 +190,7 @@ class TestLauncherArgumentForwarding:
         env = os.environ.copy()
         env["HERMES_PLATFORM"] = "linux"
         env["HERMES_ARCH"] = "x64"
+        env["PYTHONPATH"] = SRC_DIR
         res = subprocess.run(
             [BASH_EXE, sh_path, "diagnostics"],
             cwd=REPO_ROOT,
@@ -197,7 +198,7 @@ class TestLauncherArgumentForwarding:
             text=True,
             env=env,
         )
-        assert res.returncode == 0
+        assert res.returncode == 0, f"Diagnostics failed: {res.stderr}"
         assert "Portable Wrapper Diagnostics" in res.stdout
 
     @pytest.mark.skipif(not IS_WINDOWS, reason="Windows batch tests require Windows")
