@@ -81,11 +81,14 @@ Supported mode labels are `otp`, `fido2`, and `piv`. Device detection depends on
 ## Backups and recovery
 
 1. Keep at least one separate backup of important data.
-2. Store encrypted backups separately from the encryption password.
-3. Test decryption from a backup before depending on it.
-4. Do not sync plaintext credentials to an untrusted destination.
+2. Use the backup tool (`python tools/backup/backup_manager.py backup` or `launch.bat backup` / `launch.sh backup`) to produce verified archives with relative path preservation and SHA-256 manifests.
+3. Verify backups before relying on them: `python tools/backup/backup_manager.py verify <backup-file>`.
+4. Store encrypted backups separately from the encryption password.
+5. Test decryption from a backup before depending on it.
+6. Do not sync plaintext credentials to an untrusted destination.
 
-If you forget the password, the encrypted files cannot be recovered by this project. Restore from a known-good backup. Do not delete encrypted data until a restored copy has been verified.
+> [!WARNING]
+> **Password Recovery Limitation:** If you forget or lose the password, encrypted files CANNOT be recovered by this project or anyone else. There is NO master key, backdoor, or recovery question. Restoring a backup does NOT reset the vault password. Do not delete encrypted data until a restored copy has been verified.
 
 The S3 utility (`tools/sync/s3_sync.py`) can encrypt files before uploading. It supports offline dry runs (`--dry-run`) without requiring AWS credentials or network access. Encryption passwords can be passed securely via `HERMES_VAULT_PASSWORD`, `HERMES_S3_PASSWORD`, or `S3_SYNC_PASSWORD`. Any individual file encryption or upload failures are tracked and reported with a non-zero exit code. AWS credentials should come from the standard AWS credential chain (environment variables or `~/.aws/credentials`), never from command arguments or source code.
 

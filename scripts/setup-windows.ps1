@@ -103,12 +103,49 @@ trap {
 # -------------------------------------------------
 # Version table & URLs (easy to bump)
 # -------------------------------------------------
+$ManifestPath = Join-Path $Root 'scripts\manifests\runtimes.json'
+$ManifestData = $null
+if (Test-Path $ManifestPath) {
+    try {
+        $ManifestData = Get-Content $ManifestPath -Raw | ConvertFrom-Json
+    } catch {
+        Log-Entry WARN "Could not parse manifest at $ManifestPath, using fallback."
+    }
+}
+$winManifest = if ($ManifestData -and $ManifestData.platforms.'windows-x64') { $ManifestData.platforms.'windows-x64' } else { $null }
+
 $Versions = @{
-    python   = @{ tag='20241016'; version='3.11.10+20241016'; arch='x64'; ext='tar.gz'; url='https://github.com/indygreg/python-build-standalone/releases/download' }
-    node     = @{ version='22.14.0'; url='https://nodejs.org/dist/v22.14.0/node-v22.14.0-win-x64.zip'; arch='x64' }
-    uv       = @{ version='0.6.8'; url='https://github.com/astral-sh/uv/releases/download/0.6.8/uv-x86_64-pc-windows-msvc.zip'; arch='x64' }
-    rg       = @{ version='14.1.1'; url='https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-x86_64-pc-windows-msvc.zip'; arch='x64' }
-    git      = @{ version='2.53.0.windows.1'; url='https://github.com/git-for-windows/git/releases/download/v2.53.0.windows.1/MinGit-2.53.0-64-bit.zip'; arch='x64' }
+    python   = @{
+        version = if ($winManifest) { $winManifest.python.version } else { '3.11.10+20241016' }
+        url     = if ($winManifest) { $winManifest.python.url } else { 'https://github.com/astral-sh/python-build-standalone/releases/download/20241016/cpython-3.11.10+20241016-x86_64-pc-windows-msvc-install_only.tar.gz' }
+        sha256  = if ($winManifest) { $winManifest.python.sha256 } else { '647b66ff4552e70aec3bf634dd470891b4a2b291e8e8715b3bdb162f577d4c55' }
+        arch    = 'x64'
+        ext     = 'tar.gz'
+    }
+    node     = @{
+        version = if ($winManifest) { $winManifest.node.version } else { '22.14.0' }
+        url     = if ($winManifest) { $winManifest.node.url } else { 'https://nodejs.org/dist/v22.14.0/node-v22.14.0-win-x64.zip' }
+        sha256  = if ($winManifest) { $winManifest.node.sha256 } else { '55b639295920b219bb2acbcfa00f90393a2789095b7323f79475c9f34795f217' }
+        arch    = 'x64'
+    }
+    uv       = @{
+        version = if ($winManifest) { $winManifest.uv.version } else { '0.6.8' }
+        url     = if ($winManifest) { $winManifest.uv.url } else { 'https://github.com/astral-sh/uv/releases/download/0.6.8/uv-x86_64-pc-windows-msvc.zip' }
+        sha256  = if ($winManifest) { $winManifest.uv.sha256 } else { 'd31c3d01ca3e1a75e15ed9514c135239770b6b40a99cae716661e28e433aa495' }
+        arch    = 'x64'
+    }
+    rg       = @{
+        version = if ($winManifest) { $winManifest.rg.version } else { '14.1.1' }
+        url     = if ($winManifest) { $winManifest.rg.url } else { 'https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-x86_64-pc-windows-msvc.zip' }
+        sha256  = if ($winManifest) { $winManifest.rg.sha256 } else { 'd0f534024c42afd6cb4d38907c25cd2b249b79bbe6cc1dbee8e3e37c2b6e25a1' }
+        arch    = 'x64'
+    }
+    git      = @{
+        version = if ($winManifest) { $winManifest.git.version } else { '2.53.0.windows.1' }
+        url     = if ($winManifest) { $winManifest.git.url } else { 'https://github.com/git-for-windows/git/releases/download/v2.53.0.windows.1/MinGit-2.53.0-64-bit.zip' }
+        sha256  = if ($winManifest) { $winManifest.git.sha256 } else { '82b562c918ec87b2ef5316ed79bb199e3a25719bb871a0f10294acf21ebd08cd' }
+        arch    = 'x64'
+    }
     hermes   = @{ url='https://github.com/NousResearch/hermes-agent/archive/refs/heads/main.zip'; commit='main' }
 }
 
@@ -194,7 +231,7 @@ function Download-File {
     param(
         [Parameter(Mandatory)][string] $Url,
         [Parameter(Mandatory)][string] $OutFile,
-        [hashtable] $KnownHashes   # optional: SHA256 -> true
+        [string] $ExpectedHash = $null
     )
     $fileName = Split-Path $Url -Leaf
 
@@ -203,23 +240,27 @@ function Download-File {
         if ($size -gt 0) {
             $sizeMB = [math]::Round($size / 1MB, 2)
             Log-Entry INFO "$fileName already cached ($sizeMB MB)."
-            if ($KnownHashes -and $KnownHashes.ContainsKey($fileName)) {
-                $hash = Get-FileHash -Path $OutFile -Algorithm SHA256 | Select-Object -ExpandProperty Hash
-                if ($hash -ne $KnownHashes[$fileName]) {
-                    Log-Entry WARN "Checksum mismatch for $fileName – re‑downloading."
+            if ($ExpectedHash) {
+                $hash = (Get-FileHash -Path $OutFile -Algorithm SHA256).Hash.ToLowerInvariant()
+                if ($hash -ne $ExpectedHash.ToLowerInvariant()) {
+                    Log-Entry WARN "Checksum mismatch for cached $fileName (expected $ExpectedHash, got $hash) – re-downloading."
                     Remove-Item $OutFile -Force
+                } else {
+                    Log-Entry INFO "Verified checksum (SHA-256: $hash) for cached $fileName."
+                    return
                 }
+            } else {
+                return
             }
-            return
         }
         else {
-            Log-Entry WARN "$fileName exists but is 0 bytes – re‑downloading."
+            Log-Entry WARN "$fileName exists but is 0 bytes – re-downloading."
             Remove-Item $OutFile -Force
         }
     }
 
     Log-Entry INFO "Downloading $fileName ..."
-    # Preferred: native curl (built‑in to Windows 10+)
+    # Preferred: native curl (built-in to Windows 10+)
     $downloaded = $false
     if (Get-Command curl.exe -ErrorAction SilentlyContinue) {
         $curlArgs = @('-L','-f','--retry',3,'--connect-timeout',30,'--max-time',600,'-o',$OutFile,$Url)
@@ -228,7 +269,7 @@ function Download-File {
     }
 
     if (-not $downloaded) {
-        $ProgressPreference = 'Continue'  # keep progress bar visible
+        $ProgressPreference = 'Continue'
         try {
             Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing -TimeoutSec 600
         }
@@ -248,6 +289,17 @@ function Download-File {
         Remove-Item $OutFile -Force -ErrorAction SilentlyContinue
         throw "Downloaded file is empty: $fileName"
     }
+
+    if ($ExpectedHash) {
+        $computedHash = (Get-FileHash -Path $OutFile -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($computedHash -ne $ExpectedHash.ToLowerInvariant()) {
+            Remove-Item $OutFile -Force -ErrorAction SilentlyContinue
+            Log-Entry ERROR "Checksum verification failed for $fileName! Expected: $ExpectedHash, Got: $computedHash"
+            throw "Checksum verification failed for $fileName! Expected: $ExpectedHash, Got: $computedHash"
+        }
+        Log-Entry INFO "Checksum verified successfully (SHA-256: $computedHash) for $fileName."
+    }
+
     $sizeMB = [math]::Round($finalSize / 1MB, 2)
     Log-Entry INFO "Download complete: $sizeMB MB."
 }
@@ -366,7 +418,7 @@ function Install-Python {
     $archive = Join-Path $RuntimeDir "python.$($info.ext)"
     $cpuArch = if ($info.arch -eq 'x64') { 'x86_64' } else { $info.arch }
     $dest = Join-Path $RuntimeDir 'python'
-    Download-File -Url "$($info.url)/$($info.tag)/cpython-$($info.version)-$cpuArch-pc-windows-msvc-install_only.$($info.ext)" -OutFile $archive
+    Download-File -Url $info.url -OutFile $archive -ExpectedHash $info.sha256 -ExpectedHash $info.sha256
     Extract-Archive -Archive $archive -Destination $dest
     Ensure-BinLink -SourceBinPath (Join-Path $dest 'python.exe') -LinkName 'python.exe'
     Log-Entry INFO "Python $($info.version) installed."
@@ -385,7 +437,7 @@ function Install-Node {
     }
     $archive = Join-Path $RuntimeDir "node.$($info.url | Split-Path -Leaf)"
     $dest  = Join-Path $RuntimeDir 'node'
-    Download-File -Url $info.url -OutFile $archive
+    Download-File -Url $info.url -OutFile $archive -ExpectedHash $info.sha256
     Extract-Archive -Archive $archive -Destination $dest
     $nodeExe = Join-Path $dest 'node.exe'
     if (-not (Test-Path $nodeExe)) {
@@ -419,7 +471,7 @@ function Install-Uv {
     }
     $archive = Join-Path $RuntimeDir "uv.$($info.url | Split-Path -Leaf)"
     $dest = Join-Path $RuntimeDir 'uv'
-    Download-File -Url $info.url -OutFile $archive
+    Download-File -Url $info.url -OutFile $archive -ExpectedHash $info.sha256
     Extract-Archive -Archive $archive -Destination $dest
     Ensure-BinLink -SourceBinPath (Join-Path $dest 'uv.exe') -LinkName 'uv.exe'
     Log-Entry INFO "uv $($info.version) installed."
@@ -438,7 +490,7 @@ function Install-Rg {
     }
     $archive = Join-Path $RuntimeDir "rg.$($info.url | Split-Path -Leaf)"
     $dest = Join-Path $RuntimeDir 'rg'
-    Download-File -Url $info.url -OutFile $archive
+    Download-File -Url $info.url -OutFile $archive -ExpectedHash $info.sha256
     Extract-Archive -Archive $archive -Destination $dest
     # The binary lives directly as rg.exe inside the extracted folder
     $rgExe = Get-ChildItem $dest -Recurse -Filter 'rg.exe' | Select-Object -First 1
@@ -465,7 +517,7 @@ function Install-Git {
     $archive = Join-Path $RuntimeDir "git.$($info.url | Split-Path -Leaf)"
     $dest = Join-Path $RuntimeDir 'git'
     try {
-        Download-File -Url $info.url -OutFile $archive
+        Download-File -Url $info.url -OutFile $archive -ExpectedHash $info.sha256
         Extract-Archive -Archive $archive -Destination $dest
         Ensure-BinLink -SourceBinPath (Join-Path $dest 'cmd\git.exe') -LinkName 'git.exe'
         Log-Entry INFO "Git $($info.version) installed."
@@ -503,7 +555,7 @@ function Install-HermesSource {
 
     $archive = Join-Path $RuntimeDir "source.$($info.url | Split-Path -Leaf)"
     $destTemp = Join-Path $TempDir 'source'
-    Download-File -Url $info.url -OutFile $archive
+    Download-File -Url $info.url -OutFile $archive -ExpectedHash $info.sha256
     Extract-Archive -Archive $archive -Destination $destTemp
     # The zip contains a folder named “hermes‑agent‑<hash>”
     $srcSub = Get-ChildItem $destTemp -Directory | Select-Object -First 1
@@ -648,13 +700,20 @@ Log-Entry INFO "Created $readyFlag"
 
 # Build a quick manifest that mirrors the Unix version
 $manifestInfo = @{
-    python   = $Versions['python'].version
-    node     = $Versions['node'].version
-    uv       = $Versions['uv'].version
-    rg       = $Versions['rg'].version
-    git      = if ($SkipGit) { $null } else { $Versions['git'].version }
-    hermes   = $Versions['hermes'].commit
-    playwright = if ($SkipPlaywright) { $null } else { 'Chromium' }
+    python         = $Versions['python'].version
+    python_sha256  = $Versions['python'].sha256
+    node           = $Versions['node'].version
+    node_sha256    = $Versions['node'].sha256
+    uv             = $Versions['uv'].version
+    uv_sha256      = $Versions['uv'].sha256
+    rg             = $Versions['rg'].version
+    rg_sha256      = $Versions['rg'].sha256
+    git            = if ($SkipGit) { $null } else { $Versions['git'].version }
+    git_sha256     = if ($SkipGit) { $null } else { $Versions['git'].sha256 }
+    hermes         = $Versions['hermes'].commit
+    playwright     = if ($SkipPlaywright) { $null } else { 'Chromium' }
+    manifest_source = 'scripts/manifests/runtimes.json'
+    verified       = $true
 }
 Write-Manifest -ComponentInfo $manifestInfo
 $global:SetupDone = $true

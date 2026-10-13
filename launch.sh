@@ -91,6 +91,16 @@ Hermes Pendrive_X – Portable Launcher
 Usage:
   ./launch.sh [options] [hermes <sub‑command>...]
 
+Commands:
+  diagnostics          Run wrapper diagnostics without modifying user data
+  upgrade [preview]    Preview or apply upgrades with automatic backup and recovery
+  rollback             Restore system metadata and source from previous upgrade
+  backup               Create verified backup of user data (preserving paths)
+  restore <file>       Restore and verify user data from backup
+  profile <cmd>        Manage user data profiles (list, create, switch, delete)
+  mcp <cmd>            Manage MCP server registrations
+  hermes <sub-cmd>     Forward commands directly to Hermes CLI
+
 Options:
   -h, --help           Show this help message and exit
   -V, --version        Print launcher version and Hermes version
@@ -187,6 +197,36 @@ if (( $# )); then
     fi
   fi
   case "${1:-}" in
+    diagnostics|--diagnostics)
+      shift
+      log info "Running wrapper diagnostics ..."
+      "$PYTHON_RUN" "${PORTABLE_ROOT}/tools/doctor/diagnostics.py" "$@"
+      exit $?
+      ;;
+    upgrade)
+      shift
+      log info "Running Hermes Upgrade Manager ..."
+      "$PYTHON_RUN" "${PORTABLE_ROOT}/tools/upgrade/upgrade_manager.py" "$@"
+      exit $?
+      ;;
+    rollback)
+      shift
+      log info "Running Hermes Rollback ..."
+      "$PYTHON_RUN" "${PORTABLE_ROOT}/tools/upgrade/upgrade_manager.py" rollback "$@"
+      exit $?
+      ;;
+    backup)
+      shift
+      log info "Running Hermes Backup Manager ..."
+      "$PYTHON_RUN" "${PORTABLE_ROOT}/tools/backup/backup_manager.py" backup "$@"
+      exit $?
+      ;;
+    restore)
+      shift
+      log info "Running Hermes Restore ..."
+      "$PYTHON_RUN" "${PORTABLE_ROOT}/tools/backup/backup_manager.py" restore "$@"
+      exit $?
+      ;;
     mcp)
       shift
       log info "Running Hermes MCP Manager ..."

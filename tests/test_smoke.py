@@ -171,6 +171,63 @@ class TestLauncherArgumentForwarding:
                 except OSError:
                     pass
 
+    @pytest.mark.skipif(not IS_WINDOWS, reason="Windows batch tests require Windows")
+    def test_windows_launch_bat_diagnostics_forwarding(self):
+        bat_path = os.path.join(REPO_ROOT, "launch.bat")
+        res = subprocess.run(
+            ["cmd", "/c", bat_path, "diagnostics"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert res.returncode == 0
+        assert "Portable Wrapper Diagnostics" in res.stdout
+        assert "Host Platform:" in res.stdout
+
+    @pytest.mark.skipif(not HAS_BASH, reason="Bash required for Unix tests")
+    def test_unix_launch_sh_diagnostics_forwarding(self):
+        sh_path = os.path.join(REPO_ROOT, "launch.sh")
+        env = os.environ.copy()
+        env["HERMES_PLATFORM"] = "linux"
+        env["HERMES_ARCH"] = "x64"
+        res = subprocess.run(
+            [BASH_EXE, sh_path, "diagnostics"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert res.returncode == 0
+        assert "Portable Wrapper Diagnostics" in res.stdout
+
+    @pytest.mark.skipif(not IS_WINDOWS, reason="Windows batch tests require Windows")
+    def test_windows_launch_bat_upgrade_preview_forwarding(self):
+        bat_path = os.path.join(REPO_ROOT, "launch.bat")
+        res = subprocess.run(
+            ["cmd", "/c", bat_path, "upgrade", "preview"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert res.returncode == 0
+        assert "Hermes Upgrade Preview" in res.stdout
+
+    @pytest.mark.skipif(not HAS_BASH, reason="Bash required for Unix tests")
+    def test_unix_launch_sh_upgrade_preview_forwarding(self):
+        sh_path = os.path.join(REPO_ROOT, "launch.sh")
+        env = os.environ.copy()
+        env["HERMES_PLATFORM"] = "linux"
+        env["HERMES_ARCH"] = "x64"
+        res = subprocess.run(
+            [BASH_EXE, sh_path, "upgrade", "preview"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert res.returncode == 0
+        assert "Hermes Upgrade Preview" in res.stdout
+
 
 class TestSetupDryRun:
     @pytest.mark.skipif(not IS_WINDOWS, reason="PowerShell required on Windows")

@@ -32,37 +32,25 @@ indicate suggested order: **P1** reliability and security, **P2** usability,
 
 ## P2 — Setup and maintenance
 
-- [ ] **Make runtime downloads verifiable and reproducible.** Maintain
+- [x] **Make runtime downloads verifiable and reproducible.** Maintain
   versioned manifests and required checksums for each supported OS and
   architecture; fail setup clearly when verification fails.
-- [ ] **Add a diagnostics command for the portable wrapper.** Check supported
+- [x] **Add a diagnostics command for the portable wrapper.** Check supported
   platform, runtime versions, virtual environment, source checkout, data path,
   and optional dependencies without modifying user data.
-- [ ] **Improve upgrade and rollback handling.** Back up relevant metadata,
+- [x] **Improve upgrade and rollback handling.** Back up relevant metadata,
   explain changes before applying them, and provide a documented recovery path
   if an update fails.
-- [ ] **Add a backup/restore workflow.** Support selecting a destination,
+- [x] **Add a backup/restore workflow.** Support selecting a destination,
   preserving relative paths, verifying restored files, and documenting
   encryption and password recovery limitations.
-- [ ] **Add CI checks for shell, PowerShell, Python, and JavaScript files.**
+- [x] **Add CI checks for shell, PowerShell, Python, and JavaScript files.**
   Include Markdown-link validation and checks that generated files, runtime
   downloads, and local secrets are not accidentally tracked.
-- [ ] **Document supported versions and compatibility.** Keep the README,
+- [x] **Document supported versions and compatibility.** Keep the README,
   setup scripts, and command guide aligned with the actual runtime versions and
   launcher options.
 
-## P2 — User experience
-
-- [ ] **Make the Electron dashboard report actionable health checks.** Show
-  missing runtimes, setup state, vault state, and useful log excerpts with
-  clear error messages.
-- [ ] **Expose safe profile management in the UI.** List, create, and switch
-  profiles while requiring explicit confirmation before deleting one.
-- [ ] **Add accessible UI states.** Support keyboard navigation, visible focus,
-  readable error messages, and high-contrast themes.
-- [ ] **Improve first-run progress and cancellation.** Report download/setup
-  stages, preserve logs, and leave the next launch in a recoverable state after
-  cancellation.
 
 ## P3 — Optional features
 

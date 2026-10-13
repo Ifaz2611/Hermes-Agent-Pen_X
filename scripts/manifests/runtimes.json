@@ -1,0 +1,142 @@
+{
+  "manifest_version": "1.0.0",
+  "updated_at": "2026-10-14T00:00:00Z",
+  "platforms": {
+    "windows-x64": {
+      "python": {
+        "version": "3.11.10+20241016",
+        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20241016/cpython-3.11.10+20241016-x86_64-pc-windows-msvc-install_only.tar.gz",
+        "filename": "cpython-3.11.10+20241016-x86_64-pc-windows-msvc-install_only.tar.gz",
+        "sha256": "647b66ff4552e70aec3bf634dd470891b4a2b291e8e8715b3bdb162f577d4c55"
+      },
+      "node": {
+        "version": "22.14.0",
+        "url": "https://nodejs.org/dist/v22.14.0/node-v22.14.0-win-x64.zip",
+        "filename": "node-v22.14.0-win-x64.zip",
+        "sha256": "55b639295920b219bb2acbcfa00f90393a2789095b7323f79475c9f34795f217"
+      },
+      "uv": {
+        "version": "0.6.8",
+        "url": "https://github.com/astral-sh/uv/releases/download/0.6.8/uv-x86_64-pc-windows-msvc.zip",
+        "filename": "uv-x86_64-pc-windows-msvc.zip",
+        "sha256": "d31c3d01ca3e1a75e15ed9514c135239770b6b40a99cae716661e28e433aa495"
+      },
+      "rg": {
+        "version": "14.1.1",
+        "url": "https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-x86_64-pc-windows-msvc.zip",
+        "filename": "ripgrep-14.1.1-x86_64-pc-windows-msvc.zip",
+        "sha256": "d0f534024c42afd6cb4d38907c25cd2b249b79bbe6cc1dbee8e3e37c2b6e25a1"
+      },
+      "git": {
+        "version": "2.53.0.windows.1",
+        "url": "https://github.com/git-for-windows/git/releases/download/v2.53.0.windows.1/MinGit-2.53.0-64-bit.zip",
+        "filename": "MinGit-2.53.0-64-bit.zip",
+        "sha256": "82b562c918ec87b2ef5316ed79bb199e3a25719bb871a0f10294acf21ebd08cd"
+      }
+    },
+    "linux-x64": {
+      "python": {
+        "version": "3.11.10+20241016",
+        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20241016/cpython-3.11.10+20241016-x86_64-unknown-linux-gnu-install_only.tar.gz",
+        "filename": "cpython-3.11.10+20241016-x86_64-unknown-linux-gnu-install_only.tar.gz",
+        "sha256": "8b50a442b04724a24c1eebb65a36a0c0e833d35374dbdf9c9470d8a97b164cd9"
+      },
+      "node": {
+        "version": "22.14.0",
+        "url": "https://nodejs.org/dist/v22.14.0/node-v22.14.0-linux-x64.tar.xz",
+        "filename": "node-v22.14.0-linux-x64.tar.xz",
+        "sha256": "69b09dba5c8dcb05c4e4273a4340db1005abeafe3927efda2bc5b249e80437ec"
+      },
+      "uv": {
+        "version": "0.6.8",
+        "url": "https://github.com/astral-sh/uv/releases/download/0.6.8/uv-x86_64-unknown-linux-gnu.tar.gz",
+        "filename": "uv-x86_64-unknown-linux-gnu.tar.gz",
+        "sha256": "2378ea0122bd56a11ee7ae2ad6116c1f22f4657c03b9efb78ac150236bf7974c"
+      },
+      "rg": {
+        "version": "14.1.1",
+        "url": "https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz",
+        "filename": "ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz",
+        "sha256": "4cf9f2741e6c465ffdb7c26f38056a59e2a2544b51f7cc128ef28337eeae4d8e"
+      }
+    },
+    "linux-arm64": {
+      "python": {
+        "version": "3.11.10+20241016",
+        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20241016/cpython-3.11.10+20241016-aarch64-unknown-linux-gnu-install_only.tar.gz",
+        "filename": "cpython-3.11.10+20241016-aarch64-unknown-linux-gnu-install_only.tar.gz",
+        "sha256": "803e49259280af0f5466d32829cd9d65a302b0226e424b3f0b261f9daf6aee8f"
+      },
+      "node": {
+        "version": "22.14.0",
+        "url": "https://nodejs.org/dist/v22.14.0/node-v22.14.0-linux-arm64.tar.xz",
+        "filename": "node-v22.14.0-linux-arm64.tar.xz",
+        "sha256": "08bfbf538bad0e8cbb0269f0173cca28d705874a67a22f60b57d99dc99e30050"
+      },
+      "uv": {
+        "version": "0.6.8",
+        "url": "https://github.com/astral-sh/uv/releases/download/0.6.8/uv-aarch64-unknown-linux-gnu.tar.gz",
+        "filename": "uv-aarch64-unknown-linux-gnu.tar.gz",
+        "sha256": "3ffcaa4f4dba917fa58484a1c3dcb96a958a4baca0204e9c10a4799f81b9ee2f"
+      },
+      "rg": {
+        "version": "14.1.1",
+        "url": "https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-aarch64-unknown-linux-gnu.tar.gz",
+        "filename": "ripgrep-14.1.1-aarch64-unknown-linux-gnu.tar.gz",
+        "sha256": "c827481c4ff4ea10c9dc7a4022c8de5db34a5737cb74484d62eb94a95841ab2f"
+      }
+    },
+    "macos-x64": {
+      "python": {
+        "version": "3.11.10+20241016",
+        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20241016/cpython-3.11.10+20241016-x86_64-apple-darwin-install_only.tar.gz",
+        "filename": "cpython-3.11.10+20241016-x86_64-apple-darwin-install_only.tar.gz",
+        "sha256": "1e23ffe5bc473e1323ab8f51464da62d77399afb423babf67f8e13c82b69c674"
+      },
+      "node": {
+        "version": "22.14.0",
+        "url": "https://nodejs.org/dist/v22.14.0/node-v22.14.0-darwin-x64.tar.gz",
+        "filename": "node-v22.14.0-darwin-x64.tar.gz",
+        "sha256": "6698587713ab565a94a360e091df9f6d91c8fadda6d00f0cf6526e9b40bed250"
+      },
+      "uv": {
+        "version": "0.6.8",
+        "url": "https://github.com/astral-sh/uv/releases/download/0.6.8/uv-x86_64-apple-darwin.tar.gz",
+        "filename": "uv-x86_64-apple-darwin.tar.gz",
+        "sha256": "e069e79f6e0c430d7beaca3025b398980357b8b5c6faa7191032e20d5ee75970"
+      },
+      "rg": {
+        "version": "14.1.1",
+        "url": "https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-x86_64-apple-darwin.tar.gz",
+        "filename": "ripgrep-14.1.1-x86_64-apple-darwin.tar.gz",
+        "sha256": "fc87e78f7cb3fea12d69072e7ef3b21509754717b746368fd40d88963630e2b3"
+      }
+    },
+    "macos-arm64": {
+      "python": {
+        "version": "3.11.10+20241016",
+        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20241016/cpython-3.11.10+20241016-aarch64-apple-darwin-install_only.tar.gz",
+        "filename": "cpython-3.11.10+20241016-aarch64-apple-darwin-install_only.tar.gz",
+        "sha256": "5a69382da99c4620690643517ca1f1f53772331b347e75f536088c42a4cf6620"
+      },
+      "node": {
+        "version": "22.14.0",
+        "url": "https://nodejs.org/dist/v22.14.0/node-v22.14.0-darwin-arm64.tar.gz",
+        "filename": "node-v22.14.0-darwin-arm64.tar.gz",
+        "sha256": "e9404633bc02a5162c5c573b1e2490f5fb44648345d64a958b17e325729a5e42"
+      },
+      "uv": {
+        "version": "0.6.8",
+        "url": "https://github.com/astral-sh/uv/releases/download/0.6.8/uv-aarch64-apple-darwin.tar.gz",
+        "filename": "uv-aarch64-apple-darwin.tar.gz",
+        "sha256": "e4f83fc42d9735512198c2d86a6fc136e2f5a2b59b3ccc4f104018ed07465499"
+      },
+      "rg": {
+        "version": "14.1.1",
+        "url": "https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-aarch64-apple-darwin.tar.gz",
+        "filename": "ripgrep-14.1.1-aarch64-apple-darwin.tar.gz",
+        "sha256": "24ad76777745fbff131c8fbc466742b011f925bfa4fffa2ded6def23b5b937be"
+      }
+    }
+  }
+}

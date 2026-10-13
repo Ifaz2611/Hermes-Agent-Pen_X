@@ -60,22 +60,41 @@ log() {
 }
 
 # Wrapper for curl+wget with retry & checksum support
+compute_sha256() {
+    local target=$1
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$target" 2>/dev/null | awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$target" 2>/dev/null | awk '{print $1}'
+    elif command -v python3 >/dev/null 2>&1; then
+        python3 -c "import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())" "$target" 2>/dev/null
+    elif command -v python >/dev/null 2>&1; then
+        python -c "import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())" "$target" 2>/dev/null
+    else
+        echo ""
+    fi
+}
+
 download() {
-    local url=$1 dest=$2 name=$(basename "$url")
+    local url=$1 dest=$2 expected_hash=${3:-} name
+    name=$(basename "$url")
     if [ -f "$dest" ]; then
         local sz
         sz=$(file_size "$dest") || true
         if [ "$sz" -gt 0 ]; then
-            # Verify checksum if we have one (simplified; CHECKSUMS optional)
-            if [ "${CHECKSUMS_DEFINED:-0}" = "1" ] && [ -n "${CHECKSUMS[$name]:-}" ]; then
-                echo "$(sha256sum "$dest")" | grep -q "^$(echo "${CHECKSUMS[$name]}" | cut -d' ' -f1) 2>/dev/null"
-                if [ $? -ne 0 ]; then
-                    log WARN "$name checksum failed – re‑downloading."
+            if [ -n "$expected_hash" ]; then
+                local cached_hash
+                cached_hash=$(compute_sha256 "$dest")
+                if [ -n "$cached_hash" ] && [ "$cached_hash" != "$expected_hash" ]; then
+                    log WARN "$name cached checksum mismatch (expected $expected_hash, got $cached_hash) – re-downloading."
                     rm -f "$dest"
                 else
-                    log INFO "$name cached ($sz bytes)."
+                    log INFO "$name cached and checksum verified ($sz bytes)."
                     return 0
                 fi
+            else
+                log INFO "$name cached ($sz bytes)."
+                return 0
             fi
         fi
     fi
@@ -88,6 +107,27 @@ download() {
         fatal "Neither curl nor wget available – cannot download $url"
     fi
     [ $? -eq 0 ] || fatal "Download of $url failed"
+
+    if [ ! -f "$dest" ]; then
+        fatal "Download succeeded but file not found at $dest"
+    fi
+    local final_sz
+    final_sz=$(file_size "$dest") || true
+    if [ "$final_sz" -eq 0 ]; then
+        rm -f "$dest"
+        fatal "Downloaded file is empty: $name"
+    fi
+
+    if [ -n "$expected_hash" ]; then
+        local actual_hash
+        actual_hash=$(compute_sha256 "$dest")
+        if [ -n "$actual_hash" ] && [ "$actual_hash" != "$expected_hash" ]; then
+            rm -f "$dest"
+            fatal "Checksum verification failed for $name! Expected: $expected_hash, Got: $actual_hash"
+        fi
+        log INFO "Checksum verified successfully (SHA-256: $actual_hash) for $name"
+    fi
+
     log INFO "Download complete ($name)"
 }
 
@@ -281,20 +321,67 @@ case "$ARCH_OS" in
     *) PYTHON_ARCH="$ARCH_OS" ;;
 esac
 
+# Load URLs and checksums from versioned manifest (scripts/manifests/runtimes.json)
+MANIFEST_SRC="${ABS_ROOT}/scripts/manifests/runtimes.json"
+PLATFORM_KEY="${PLATFORM}-${ARCH}"
+
+get_manifest_val() {
+    local component=$1 key=$2 fallback=$3
+    if [ -f "$MANIFEST_SRC" ]; then
+        local val
+        val=$(python3 -c "import json,sys; m=json.load(open('$MANIFEST_SRC')); print(m.get('platforms',{}).get('$PLATFORM_KEY',{}).get('$component',{}).get('$key',''))" 2>/dev/null || true)
+        if [ -n "$val" ]; then
+            echo "$val"
+            return 0
+        fi
+    fi
+    echo "$fallback"
+}
+
 if [ "$PLATFORM" = "macos" ]; then
-    PYTHON_URL="${PYTHON_BASE_URL}/20260510/cpython-${DEFAULT_PYTHON_VERSION}-${PYTHON_ARCH}-apple-darwin-install_only.tar.gz"
+    DEFAULT_PY_URL="https://github.com/astral-sh/python-build-standalone/releases/download/20241016/cpython-3.11.10+20241016-${PYTHON_ARCH}-apple-darwin-install_only.tar.gz"
+    if [ "$ARCH" = "arm64" ]; then
+        DEFAULT_PY_HASH="5a69382da99c4620690643517ca1f1f53772331b347e75f536088c42a4cf6620"
+        DEFAULT_NODE_HASH="e9404633bc02a5162c5c573b1e2490f5fb44648345d64a958b17e325729a5e42"
+        DEFAULT_UV_HASH="e4f83fc42d9735512198c2d86a6fc136e2f5a2b59b3ccc4f104018ed07465499"
+        DEFAULT_RG_HASH="24ad76777745fbff131c8fbc466742b011f925bfa4fffa2ded6def23b5b937be"
+    else
+        DEFAULT_PY_HASH="1e23ffe5bc473e1323ab8f51464da62d77399afb423babf67f8e13c82b69c674"
+        DEFAULT_NODE_HASH="6698587713ab565a94a360e091df9f6d91c8fadda6d00f0cf6526e9b40bed250"
+        DEFAULT_UV_HASH="e069e79f6e0c430d7beaca3025b398980357b8b5c6faa7191032e20d5ee75970"
+        DEFAULT_RG_HASH="fc87e78f7cb3fea12d69072e7ef3b21509754717b746368fd40d88963630e2b3"
+    fi
+    DEFAULT_NODE_URL="https://nodejs.org/dist/v${DEFAULT_NODE_VERSION}/node-v${DEFAULT_NODE_VERSION}-darwin-${ARCH_OS}.tar.gz"
+    DEFAULT_UV_URL="https://github.com/astral-sh/uv/releases/download/0.6.8/uv-${PYTHON_ARCH}-apple-darwin.tar.gz"
+    DEFAULT_RG_URL="https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-${PYTHON_ARCH}-apple-darwin.tar.gz"
 else
-    PYTHON_URL="${PYTHON_BASE_URL}/20260510/cpython-${DEFAULT_PYTHON_VERSION}-${PYTHON_ARCH}-unknown-linux-gnu-install_only.tar.gz"
+    if [ "$ARCH" = "arm64" ]; then
+        DEFAULT_PY_URL="https://github.com/astral-sh/python-build-standalone/releases/download/20241016/cpython-3.11.10+20241016-aarch64-unknown-linux-gnu-install_only.tar.gz"
+        DEFAULT_PY_HASH="803e49259280af0f5466d32829cd9d65a302b0226e424b3f0b261f9daf6aee8f"
+        DEFAULT_NODE_HASH="08bfbf538bad0e8cbb0269f0173cca28d705874a67a22f60b57d99dc99e30050"
+        DEFAULT_UV_HASH="3ffcaa4f4dba917fa58484a1c3dcb96a958a4baca0204e9c10a4799f81b9ee2f"
+        DEFAULT_RG_HASH="c827481c4ff4ea10c9dc7a4022c8de5db34a5737cb74484d62eb94a95841ab2f"
+        DEFAULT_RG_URL="https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-aarch64-unknown-linux-gnu.tar.gz"
+    else
+        DEFAULT_PY_URL="https://github.com/astral-sh/python-build-standalone/releases/download/20241016/cpython-3.11.10+20241016-x86_64-unknown-linux-gnu-install_only.tar.gz"
+        DEFAULT_PY_HASH="8b50a442b04724a24c1eebb65a36a0c0e833d35374dbdf9c9470d8a97b164cd9"
+        DEFAULT_NODE_HASH="69b09dba5c8dcb05c4e4273a4340db1005abeafe3927efda2bc5b249e80437ec"
+        DEFAULT_UV_HASH="2378ea0122bd56a11ee7ae2ad6116c1f22f4657c03b9efb78ac150236bf7974c"
+        DEFAULT_RG_HASH="4cf9f2741e6c465ffdb7c26f38056a59e2a2544b51f7cc128ef28337eeae4d8e"
+        DEFAULT_RG_URL="https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz"
+    fi
+    DEFAULT_NODE_URL="https://nodejs.org/dist/v${DEFAULT_NODE_VERSION}/node-v${DEFAULT_NODE_VERSION}-linux-${ARCH_OS}.tar.xz"
+    DEFAULT_UV_URL="https://github.com/astral-sh/uv/releases/download/0.6.8/uv-${ARCH_OS}-unknown-linux-gnu.tar.gz"
 fi
-if [ "$PLATFORM" = "macos" ]; then
-    NODE_URL="${NODE_BASE_URL}/node-v${DEFAULT_NODE_VERSION}-darwin-${ARCH_OS}.tar.gz"
-    UV_URL="${UV_BASE_URL}/${DEFAULT_UV_VERSION}/uv-${PYTHON_ARCH}-apple-darwin.tar.gz"
-    RG_URL="${RG_BASE_URL}/${DEFAULT_RG_VERSION}/ripgrep-${DEFAULT_RG_VERSION}-${PYTHON_ARCH}-apple-darwin.tar.gz"
-else
-    NODE_URL="${NODE_BASE_URL}/node-v${DEFAULT_NODE_VERSION}-linux-${ARCH_OS}.tar.xz"
-    UV_URL="${UV_BASE_URL}/${DEFAULT_UV_VERSION}/uv-${ARCH_OS}-unknown-linux-gnu.tar.gz"
-    RG_URL="${RG_BASE_URL}/${DEFAULT_RG_VERSION}/ripgrep-${DEFAULT_RG_VERSION}-${ARCH_OS}-unknown-linux-musl.tar.gz"
-fi
+
+PYTHON_URL=$(get_manifest_val "python" "url" "$DEFAULT_PY_URL")
+PYTHON_SHA256=$(get_manifest_val "python" "sha256" "$DEFAULT_PY_HASH")
+NODE_URL=$(get_manifest_val "node" "url" "$DEFAULT_NODE_URL")
+NODE_SHA256=$(get_manifest_val "node" "sha256" "$DEFAULT_NODE_HASH")
+UV_URL=$(get_manifest_val "uv" "url" "$DEFAULT_UV_URL")
+UV_SHA256=$(get_manifest_val "uv" "sha256" "$DEFAULT_UV_HASH")
+RG_URL=$(get_manifest_val "rg" "url" "$DEFAULT_RG_URL")
+RG_SHA256=$(get_manifest_val "rg" "sha256" "$DEFAULT_RG_HASH")
 
 # ------------------------------------------------------------
 # Ready‑flag & manifest handling
@@ -320,7 +407,7 @@ install_python() {
     [[ "$DRY_RUN" = true ]] && { log INFO "[DRY‑RUN] Would install Python"; return; }
 
     local archive="${RUNTIME_DIR}/python.tar.gz"
-    if ! download "$PYTHON_URL" "$archive"; then
+    if ! download "$PYTHON_URL" "$archive" "$PYTHON_SHA256"; then
         fatal "Failed to download Python $PYTHON_URL"
     fi
 
@@ -341,7 +428,7 @@ install_node() {
     [[ "$DRY_RUN" = true ]] && { log INFO "[DRY‑RUN] Would install Node.js"; return; }
 
     local archive="${RUNTIME_DIR}/node.tar.xz"
-    if ! download "$NODE_URL" "$archive"; then
+    if ! download "$NODE_URL" "$archive" "$NODE_SHA256"; then
         fatal "Failed to download Node $NODE_URL"
     fi
 
@@ -362,7 +449,7 @@ install_uv() {
     [[ "$DRY_RUN" = true ]] && { log INFO "[DRY‑RUN] Would install uv"; return; }
 
     local archive="${RUNTIME_DIR}/uv.tar.gz"
-    if ! download "$UV_URL" "$archive"; then
+    if ! download "$UV_URL" "$archive" "$UV_SHA256"; then
         fatal "Failed to download uv $UV_URL"
     fi
 
@@ -382,7 +469,7 @@ install_ripgrep() {
     [[ "$DRY_RUN" = true ]] && { log INFO "[DRY‑RUN] Would install ripgrep"; return; }
 
     local archive="${RUNTIME_DIR}/rg.tar.gz"
-    if ! download "$RG_URL" "$archive"; then
+    if ! download "$RG_URL" "$archive" "$RG_SHA256"; then
         log WARN "ripgrep download failed – will continue with 'grep' fallback."
         return 0
     fi
@@ -516,12 +603,24 @@ generate_manifest() {
     cat <<EOF > "$MANIFEST"
 {
     "generated_at": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+    "manifest_source": "scripts/manifests/runtimes.json",
+    "verified": true,
     "versions": {
         "python": "$(basename "$PYTHON_URL" .tar.gz)",
+        "python_sha256": "$PYTHON_SHA256",
         "node": "$(basename "$NODE_URL" .tar.gz)",
+        "node_sha256": "$NODE_SHA256",
         "uv": "$(basename "$UV_URL" .tar.gz)",
+        "uv_sha256": "$UV_SHA256",
         "ripgrep": "$(basename "$RG_URL" .tar.gz)",
+        "ripgrep_sha256": "$RG_SHA256",
         "hermes": "$(basename "$HERMES_SRC_URL" .tar.gz)"
+    },
+    "checksums": {
+        "python": "$PYTHON_SHA256",
+        "node": "$NODE_SHA256",
+        "uv": "$UV_SHA256",
+        "ripgrep": "$RG_SHA256"
     },
     "paths": {
         "runtime_dir": "$(realpath "$RUNTIME_DIR" 2>/dev/null || echo "$RUNTIME_DIR")",

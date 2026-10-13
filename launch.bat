@@ -133,10 +133,67 @@ if /I "%~1"=="--version" goto :show_version
 if /I "%~1"=="-v" goto :show_version
 
 set "FIRST_TOKEN=%~1"
+if /I "!FIRST_TOKEN!"=="diagnostics" (
+    shift
+    set "CMD_ACTION=diagnostics"
+    goto :collect_remaining
+)
+if /I "!FIRST_TOKEN!"=="diag" (
+    shift
+    set "CMD_ACTION=diagnostics"
+    goto :collect_remaining
+)
+if /I "!FIRST_TOKEN!"=="/diagnostics" (
+    shift
+    set "CMD_ACTION=diagnostics"
+    goto :collect_remaining
+)
+if /I "!FIRST_TOKEN!"=="--diagnostics" (
+    shift
+    set "CMD_ACTION=diagnostics"
+    goto :collect_remaining
+)
+if /I "!FIRST_TOKEN!"=="upgrade" (
+    shift
+    set "CMD_ACTION=upgrade"
+    goto :collect_remaining
+)
+if /I "!FIRST_TOKEN!"=="update" (
+    shift
+    set "CMD_ACTION=upgrade"
+    goto :collect_remaining
+)
+if /I "!FIRST_TOKEN!"=="rollback" (
+    shift
+    set "CMD_ACTION=rollback"
+    goto :collect_remaining
+)
+if /I "!FIRST_TOKEN!"=="backup" (
+    shift
+    set "CMD_ACTION=backup"
+    goto :collect_remaining
+)
+if /I "!FIRST_TOKEN!"=="restore" (
+    shift
+    set "CMD_ACTION=restore"
+    goto :collect_remaining
+)
 if /I "!FIRST_TOKEN!"=="hermes" (
     shift
     set "CMD_ACTION=hermes"
     goto :collect_remaining
+)
+if /I "!FIRST_TOKEN!"=="mcp" (
+    shift
+    set "CMD_ACTION=mcp"
+    goto :collect_remaining
+)
+if /I "!FIRST_TOKEN!"=="profile" (
+    shift
+    set "CMD_ACTION=profile"
+    goto :collect_remaining
+)
+set "CMD_ACTION=hermes"  :collect_remaining
 )
 if /I "!FIRST_TOKEN!"=="mcp" (
     shift
@@ -165,12 +222,22 @@ echo.
 echo Usage:
 echo   launch.bat [options] [hermes ^<sub-command^>...]
 echo.
+echo Commands:
+echo   diagnostics            Check platform, runtimes, venv, data, and dependencies
+echo   upgrade [preview]      Preview or apply upgrades with automatic backup and recovery
+echo   rollback               Restore system metadata and source from previous upgrade
+echo   backup                 Create verified backup of user data (preserving paths)
+echo   restore ^<file^>         Restore and verify user data from backup
+echo   profile ^<cmd^>          Manage user data profiles (list, create, switch, delete)
+echo   mcp ^<cmd^>              Manage MCP server registrations
+echo   hermes ^<sub-command^>   Forward commands directly to Hermes CLI
+echo.
 echo Options:
-echo   -h, --help, /?       Show this help message and exit
-echo   -v, --version        Print launcher version
-echo   /silent              Run non-interactive
-echo   /profile ^<name^>      Specify a custom data profile
-echo   /ramdisk             Run with RAM disk optimization
+echo   -h, --help, /?         Show this help message and exit
+echo   -v, --version          Print launcher version
+echo   /silent                Run non-interactive
+echo   /profile ^<name^>        Specify a custom data profile
+echo   /ramdisk               Run with RAM disk optimization
 exit /b 0
 
 :show_version
@@ -188,6 +255,26 @@ if defined PROFILE_NAME (
 
 :: Standalone tools dispatch (does not require runtime bootstrap)
 if defined CMD_ACTION (
+    if /I "!CMD_ACTION!"=="diagnostics" (
+        python "%PORTABLE_ROOT%\tools\doctor\diagnostics.py"!FORWARD_ARGS!
+        exit /b !ERRORLEVEL!
+    )
+    if /I "!CMD_ACTION!"=="upgrade" (
+        python "%PORTABLE_ROOT%\tools\upgrade\upgrade_manager.py"!FORWARD_ARGS!
+        exit /b !ERRORLEVEL!
+    )
+    if /I "!CMD_ACTION!"=="rollback" (
+        python "%PORTABLE_ROOT%\tools\upgrade\upgrade_manager.py" rollback!FORWARD_ARGS!
+        exit /b !ERRORLEVEL!
+    )
+    if /I "!CMD_ACTION!"=="backup" (
+        python "%PORTABLE_ROOT%\tools\backup\backup_manager.py" backup!FORWARD_ARGS!
+        exit /b !ERRORLEVEL!
+    )
+    if /I "!CMD_ACTION!"=="restore" (
+        python "%PORTABLE_ROOT%\tools\backup\backup_manager.py" restore!FORWARD_ARGS!
+        exit /b !ERRORLEVEL!
+    )
     if /I "!CMD_ACTION!"=="mcp" (
         python "%PORTABLE_ROOT%\tools\mcp\mcp_manager.py"!FORWARD_ARGS!
         exit /b !ERRORLEVEL!
