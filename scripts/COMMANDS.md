@@ -20,7 +20,10 @@ Direct launcher commands:
 | `.\launch.bat upgrade` | `bash launch.sh upgrade` | Back up metadata and apply update with rollback recovery |
 | `.\launch.bat rollback` | `bash launch.sh rollback` | Restore system state to previous upgrade snapshot |
 | `.\launch.bat backup` | `bash launch.sh backup` | Create verified backup of `data/` preserving relative paths |
-| `.\launch.bat restore <file>` | `bash launch.sh restore <file>` | Verify integrity and restore user data from backup |
+| `.\launch.bat restore <file>` | `bash launch.sh restore <file>` | Verify integrity and restore user data (conflict-safe; `--dry-run`, `--overwrite-policy`) |
+| `.\launch.bat prune` | `bash launch.sh prune` | Apply backup retention (`--keep N`, `--dry-run` preview) |
+| `.\launch.bat sync` | `bash launch.sh sync` | Sync `data/` to S3 / compatible / local provider (`--dry-run` first) |
+| `.\launch.bat schedule <cmd>` | `bash launch.sh schedule <cmd>` | Opt-in scheduled backup/sync (`status`, `enable`, `pause`, `resume`, `disable`, `run-now`, `check`) |
 | `.\launch.bat profile <cmd>` | `bash launch.sh profile <cmd>` | Manage profiles (`list`, `create`, `switch`, `delete`) |
 | `.\launch.bat mcp <cmd>` | `bash launch.sh mcp <cmd>` | Manage MCP servers without booting runtime |
 | `.\launch.bat hermes <cmd>` | `bash launch.sh hermes <cmd>` | Forward command to Hermes without opening dashboard |
@@ -99,11 +102,38 @@ python tools/backup/backup_manager.py backup --destination D:\Backups\folder\
 # Verify backup archive integrity against embedded manifest
 python tools/backup/backup_manager.py verify D:\Backups\hermes_data.zip
 
-# Restore and verify files to data/
+# Restore and verify files to data/ (default --overwrite-policy fail: aborts on conflicts)
 python tools/backup/backup_manager.py restore D:\Backups\hermes_data.zip
 
-# Preview restore without modifying files
+# Preview restore without modifying files (shows CREATE vs CONFLICT)
 python tools/backup/backup_manager.py restore D:\Backups\hermes_data.zip --dry-run
+
+# Conflict policies: skip (preserve existing), overwrite (explicit), keep-both (sidecar)
+python tools/backup/backup_manager.py restore D:\Backups\hermes_data.zip --overwrite-policy skip
+python tools/backup/backup_manager.py restore D:\Backups\hermes_data.zip --overwrite-policy keep-both
+python tools/backup/backup_manager.py restore D:\Backups\hermes_data.zip --overwrite
+
+# Retention: preview then apply (keep newest 5 in .cache/backups/)
+python tools/backup/backup_manager.py prune --dry-run --keep 5
+python tools/backup/backup_manager.py prune --keep 5
+```
+
+## Scheduled backup/sync (opt-in)
+
+Schedules are disabled until you opt in. Status and previews always explain what
+data is uploaded (source dir, file count, bytes, encrypted count, destination).
+`pause`/`resume`/`disable` provide clear stop controls. Passphrases are never
+stored — they come from `HERMES_VAULT_PASSWORD` at run time.
+
+```bash
+python tools/sync/schedule_manager.py status
+python tools/sync/schedule_manager.py enable --interval-hours 24 --mode backup --retention-keep 5
+python tools/sync/schedule_manager.py enable --interval-hours 12 --mode s3 --bucket my-bucket --prefix hermes/ --encrypt --no-overwrite
+python tools/sync/schedule_manager.py run-now --dry-run
+python tools/sync/schedule_manager.py check --run-if-due
+python tools/sync/schedule_manager.py pause
+python tools/sync/schedule_manager.py resume
+python tools/sync/schedule_manager.py disable
 ```
 
 ### Encryption and password recovery limitations
@@ -201,13 +231,26 @@ python tools/mcp/mcp_manager.py add <name> --cmd <command> --env KEY=VALUE --arg
 python tools/mcp/mcp_manager.py remove <name>
 ```
 
-### S3 sync
+### S3 sync (with conflict protection, verification, retention, providers)
 
 ```bash
 python tools/sync/s3_sync.py --bucket <bucket> --prefix <prefix> --dry-run
 python tools/sync/s3_sync.py --bucket <bucket> --prefix <prefix> --encrypt --dry-run
 python tools/sync/s3_sync.py --bucket <bucket> --prefix <prefix> --encrypt
+# Never silently overwrite remote data:
+python tools/sync/s3_sync.py --bucket <bucket> --prefix <prefix> --no-overwrite
+python tools/sync/s3_sync.py --bucket <bucket> --prefix <prefix> --conflict-policy fail
+# Verify uploads + remote retention (preview unless --prune):
+python tools/sync/s3_sync.py --bucket <bucket> --prefix <prefix> --verify
+python tools/sync/s3_sync.py --bucket <bucket> --prefix <prefix> --retention-keep 5
+python tools/sync/s3_sync.py --bucket <bucket> --prefix <prefix> --retention-keep 5 --prune
+# Additional providers (only after S3 is reliable; always --dry-run first):
+python tools/sync/s3_sync.py --bucket <bucket> --provider s3-compatible --endpoint-url https://s3.example.com --dry-run
+python tools/sync/s3_sync.py --bucket ignored --provider local --local-dir D:\Mirror --dry-run
 ```
+
+See `tools/sync/providers.py` for the provider matrix (`s3`, `s3-compatible`,
+`minio`, `wasabi`, `spaces`, `b2`, `r2`, `local`).
 
 ## Reset scripts
 

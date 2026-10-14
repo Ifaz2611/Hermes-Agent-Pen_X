@@ -178,6 +178,21 @@ if /I "!FIRST_TOKEN!"=="restore" (
     set "CMD_ACTION=restore"
     goto :collect_remaining
 )
+if /I "!FIRST_TOKEN!"=="prune" (
+    shift
+    set "CMD_ACTION=prune"
+    goto :collect_remaining
+)
+if /I "!FIRST_TOKEN!"=="sync" (
+    shift
+    set "CMD_ACTION=sync"
+    goto :collect_remaining
+)
+if /I "!FIRST_TOKEN!"=="schedule" (
+    shift
+    set "CMD_ACTION=schedule"
+    goto :collect_remaining
+)
 if /I "!FIRST_TOKEN!"=="hermes" (
     shift
     set "CMD_ACTION=hermes"
@@ -227,7 +242,10 @@ echo   diagnostics            Check platform, runtimes, venv, data, and dependen
 echo   upgrade [preview]      Preview or apply upgrades with automatic backup and recovery
 echo   rollback               Restore system metadata and source from previous upgrade
 echo   backup                 Create verified backup of user data (preserving paths)
-echo   restore ^<file^>         Restore and verify user data from backup
+echo   restore ^<file^>         Restore and verify user data (conflict-safe; see --dry-run)
+echo   prune                    Apply backup retention (keep N newest; preview with --dry-run)
+echo   sync                     Sync data/ to S3 / compatible / local provider (use --dry-run first)
+echo   schedule ^<cmd^>         Opt-in scheduled backup/sync (status, enable, pause, resume, disable, run-now, check)
 echo   profile ^<cmd^>          Manage user data profiles (list, create, switch, delete)
 echo   mcp ^<cmd^>              Manage MCP server registrations
 echo   hermes ^<sub-command^>   Forward commands directly to Hermes CLI
@@ -273,6 +291,18 @@ if defined CMD_ACTION (
     )
     if /I "!CMD_ACTION!"=="restore" (
         python "%PORTABLE_ROOT%\tools\backup\backup_manager.py" restore!FORWARD_ARGS!
+        exit /b !ERRORLEVEL!
+    )
+    if /I "!CMD_ACTION!"=="prune" (
+        python "%PORTABLE_ROOT%\tools\backup\backup_manager.py" prune!FORWARD_ARGS!
+        exit /b !ERRORLEVEL!
+    )
+    if /I "!CMD_ACTION!"=="sync" (
+        python "%PORTABLE_ROOT%\tools\sync\s3_sync.py"!FORWARD_ARGS!
+        exit /b !ERRORLEVEL!
+    )
+    if /I "!CMD_ACTION!"=="schedule" (
+        python "%PORTABLE_ROOT%\tools\sync\schedule_manager.py"!FORWARD_ARGS!
         exit /b !ERRORLEVEL!
     )
     if /I "!CMD_ACTION!"=="mcp" (

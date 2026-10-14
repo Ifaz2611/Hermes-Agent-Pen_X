@@ -58,7 +58,10 @@ The portable wrappers support direct subcommands that execute without starting t
 | `.\launch.bat upgrade` | `bash launch.sh upgrade` | Back up metadata and apply update with automatic rollback on error |
 | `.\launch.bat rollback` | `bash launch.sh rollback` | Revert to the snapshot created before the last upgrade |
 | `.\launch.bat backup [--dest <path>]` | `bash launch.sh backup [--dest <path>]` | Create verified backup of `data/` preserving relative paths |
-| `.\launch.bat restore <file>` | `bash launch.sh restore <file>` | Verify integrity and restore user data from a backup archive |
+| `.\launch.bat restore <file>` | `bash launch.sh restore <file>` | Verify integrity and restore user data (conflict-safe; preview with `--dry-run`) |
+| `.\launch.bat prune --keep 5` | `bash launch.sh prune --keep 5` | Apply backup retention (keep N newest; preview with `--dry-run`) |
+| `.\launch.bat sync --dry-run` | `bash launch.sh sync --dry-run` | Sync `data/` to S3 / compatible / local provider (preview first) |
+| `.\launch.bat schedule status` | `bash launch.sh schedule status` | Opt-in scheduled backup/sync (`enable`, `pause`, `resume`, `disable`, `run-now`, `check`) |
 | `.\launch.bat profile <cmd>` | `bash launch.sh profile <cmd>` | Manage profiles (`list`, `create`, `delete`) |
 | `.\launch.bat mcp <cmd>` | `bash launch.sh mcp <cmd>` | Manage MCP servers |
 | `.\launch.bat hermes <cmd>` | `bash launch.sh hermes <cmd>` | Forward command directly to the Hermes CLI |
@@ -92,8 +95,42 @@ python tools/backup/backup_manager.py backup --destination D:\HermesBackups\back
 # Verify an existing backup archive without altering files
 python tools/backup/backup_manager.py verify D:\HermesBackups\backup.zip
 
-# Restore and verify files to data/
-python tools/backup/backup_manager.py restore D:\HermesBackups\backup.zip
+# Restore and verify files to data/ (safe default: aborts on conflicts; preview first)
+python tools/backup/backup_manager.py restore D:\Backups\hermes_data.zip --dry-run
+python tools/backup/backup_manager.py restore D:\Backups\hermes_data.zip
+python tools/backup/backup_manager.py restore D:\Backups\hermes_data.zip --overwrite-policy skip
+python tools/backup/backup_manager.py restore D:\Backups\hermes_data.zip --overwrite-policy keep-both
+
+# Retention: preview then apply (keep newest 5)
+python tools/backup/backup_manager.py prune --dry-run --keep 5
+python tools/backup/backup_manager.py prune --keep 5
+```
+
+Scheduled backups/sync are strictly opt-in (disabled until you enable them).
+Every preview explains what data is uploaded; `pause`/`resume`/`disable` stop
+automatic runs; passphrases are never stored:
+
+```bash
+python tools/sync/schedule_manager.py status
+python tools/sync/schedule_manager.py enable --interval-hours 24 --mode backup --retention-keep 5
+python tools/sync/schedule_manager.py enable --interval-hours 12 --mode s3 --bucket my-bucket --prefix hermes/ --encrypt --no-overwrite
+python tools/sync/schedule_manager.py run-now --dry-run
+python tools/sync/schedule_manager.py pause
+python tools/sync/schedule_manager.py resume
+python tools/sync/schedule_manager.py disable
+```
+
+S3 sync protects existing remote data (`--no-overwrite` / `--conflict-policy
+fail|skip|overwrite|keep-both`), supports `--verify` size checks, remote
+retention (`--retention-keep N` + `--prune`), and additional providers
+(`--provider s3|s3-compatible|minio|wasabi|spaces|b2|r2|local`; S3-compatible
+targets require `--endpoint-url` and a `--dry-run` first — see
+`tools/sync/providers.py`):
+
+```bash
+python tools/sync/s3_sync.py --bucket my-bucket --prefix hermes/ --dry-run
+python tools/sync/s3_sync.py --bucket my-bucket --prefix hermes/ --no-overwrite --verify
+python tools/sync/s3_sync.py --bucket ignored --provider local --local-dir D:\Mirror --dry-run
 ```
 
 > [!WARNING]

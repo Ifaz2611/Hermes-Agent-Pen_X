@@ -96,7 +96,10 @@ Commands:
   upgrade [preview]    Preview or apply upgrades with automatic backup and recovery
   rollback             Restore system metadata and source from previous upgrade
   backup               Create verified backup of user data (preserving paths)
-  restore <file>       Restore and verify user data from backup
+  restore <file>       Restore and verify user data (conflict-safe; see --dry-run)
+  prune                Apply backup retention (keep N newest; preview with --dry-run)
+  sync                 Sync data/ to S3 / compatible / local provider (use --dry-run first)
+  schedule <cmd>       Opt-in scheduled backup/sync (status|enable|pause|resume|disable|run-now|check)
   profile <cmd>        Manage user data profiles (list, create, switch, delete)
   mcp <cmd>            Manage MCP server registrations
   hermes <sub-cmd>     Forward commands directly to Hermes CLI
@@ -190,53 +193,78 @@ export HERMES_HOME
 
 # Direct subcommands that do not require full runtime bootstrap
 if (( $# )); then
-  PYTHON_RUN="python3"
-  if ! python3 --version >/dev/null 2>&1; then
-    if python --version >/dev/null 2>&1; then
-      PYTHON_RUN="python"
-    fi
+  # Determine Python executable (works under Git Bash on Windows too).
+  # NOTE: prefer a working interpreter, not just one present on PATH
+  # (Windows Store python stubs satisfy `command -v` but fail `--version`).
+  if python3 --version >/dev/null 2>&1; then
+    PYTHON_RUN="python3"
+  elif python --version >/dev/null 2>&1; then
+    PYTHON_RUN="python"
+  else
+    log error "Python not found on PATH"
+    exit 1
   fi
   case "${1:-}" in
     diagnostics|--diagnostics)
       shift
       log info "Running wrapper diagnostics ..."
-      "$PYTHON_RUN" "${PORTABLE_ROOT}/tools/doctor/diagnostics.py" "$@"
+      # Ensure diagnostics can import repo-local packages even if caller didn't set PYTHONPATH.
+      # Prepend PORTABLE_ROOT/src; preserve any existing PYTHONPATH.
+      env PYTHONPATH="${PORTABLE_ROOT}/src:${PYTHONPATH:-}" "$PYTHON_RUN" "${PORTABLE_ROOT}/tools/doctor/diagnostics.py" "$@" 2>&1
       exit $?
       ;;
     upgrade)
       shift
       log info "Running Hermes Upgrade Manager ..."
-      "$PYTHON_RUN" "${PORTABLE_ROOT}/tools/upgrade/upgrade_manager.py" "$@"
+      env PYTHONPATH="${PORTABLE_ROOT}/src:${PYTHONPATH:-}" "$PYTHON_RUN" "${PORTABLE_ROOT}/tools/upgrade/upgrade_manager.py" "$@" 2>&1
       exit $?
       ;;
     rollback)
       shift
       log info "Running Hermes Rollback ..."
-      "$PYTHON_RUN" "${PORTABLE_ROOT}/tools/upgrade/upgrade_manager.py" rollback "$@"
+      env PYTHONPATH="${PORTABLE_ROOT}/src:${PYTHONPATH:-}" "$PYTHON_RUN" "${PORTABLE_ROOT}/tools/upgrade/upgrade_manager.py" rollback "$@" 2>&1
       exit $?
       ;;
     backup)
       shift
       log info "Running Hermes Backup Manager ..."
-      "$PYTHON_RUN" "${PORTABLE_ROOT}/tools/backup/backup_manager.py" backup "$@"
+      env PYTHONPATH="${PORTABLE_ROOT}/src:${PYTHONPATH:-}" "$PYTHON_RUN" "${PORTABLE_ROOT}/tools/backup/backup_manager.py" backup "$@" 2>&1
       exit $?
       ;;
     restore)
       shift
       log info "Running Hermes Restore ..."
-      "$PYTHON_RUN" "${PORTABLE_ROOT}/tools/backup/backup_manager.py" restore "$@"
+      env PYTHONPATH="${PORTABLE_ROOT}/src:${PYTHONPATH:-}" "$PYTHON_RUN" "${PORTABLE_ROOT}/tools/backup/backup_manager.py" restore "$@" 2>&1
+      exit $?
+      ;;
+    prune)
+      shift
+      log info "Running Hermes Backup Retention (prune) ..."
+      env PYTHONPATH="${PORTABLE_ROOT}/src:${PYTHONPATH:-}" "$PYTHON_RUN" "${PORTABLE_ROOT}/tools/backup/backup_manager.py" prune "$@" 2>&1
+      exit $?
+      ;;
+    sync)
+      shift
+      log info "Running Hermes S3 Sync ..."
+      env PYTHONPATH="${PORTABLE_ROOT}/src:${PYTHONPATH:-}" "$PYTHON_RUN" "${PORTABLE_ROOT}/tools/sync/s3_sync.py" "$@" 2>&1
+      exit $?
+      ;;
+    schedule)
+      shift
+      log info "Running Hermes Schedule Manager ..."
+      env PYTHONPATH="${PORTABLE_ROOT}/src:${PYTHONPATH:-}" "$PYTHON_RUN" "${PORTABLE_ROOT}/tools/sync/schedule_manager.py" "$@" 2>&1
       exit $?
       ;;
     mcp)
       shift
       log info "Running Hermes MCP Manager ..."
-      "$PYTHON_RUN" "${PORTABLE_ROOT}/tools/mcp/mcp_manager.py" "$@"
+      env PYTHONPATH="${PORTABLE_ROOT}/src:${PYTHONPATH:-}" "$PYTHON_RUN" "${PORTABLE_ROOT}/tools/mcp/mcp_manager.py" "$@" 2>&1
       exit $?
       ;;
     profile)
       shift
       log info "Running Hermes Profile Manager ..."
-      "$PYTHON_RUN" "${PORTABLE_ROOT}/tools/profiles/profile_manager.py" "$@"
+      env PYTHONPATH="${PORTABLE_ROOT}/src:${PYTHONPATH:-}" "$PYTHON_RUN" "${PORTABLE_ROOT}/tools/profiles/profile_manager.py" "$@" 2>&1
       exit $?
       ;;
   esac

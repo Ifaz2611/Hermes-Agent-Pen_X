@@ -54,11 +54,22 @@ indicate suggested order: **P1** reliability and security, **P2** usability,
 
 ## P3 — Optional features
 
-- [ ] **Add scheduled backup/sync support.** Make schedules opt-in, explain
+- [x] **Add scheduled backup/sync support.** Make schedules opt-in, explain
   what data is uploaded, and provide a clear pause/disable control.
-- [ ] **Add backup retention and conflict handling.** Preview actions and
+  (`tools/sync/schedule_manager.py`: `status`/`enable`/`pause`/`resume`/
+  `disable`/`run-now --dry-run`/`check --run-if-due`; no schedule file means
+  disabled; every preview lists source file count, bytes, encrypted count and
+  destination; passphrases never stored.)
+- [x] **Add backup retention and conflict handling.** Preview actions and
   protect existing remote data from silent overwrites.
-- [ ] **Explore additional storage providers.** Consider other object-storage
+  (`backup prune --keep N --dry-run`; `restore --dry-run` preview with
+  `--overwrite-policy fail|skip|overwrite|keep-both` defaulting to `fail`;
+  `s3_sync --no-overwrite`/`--conflict-policy` + `--verify` + `--retention-keep`
+  with `--prune` required to delete.)
+- [x] **Explore additional storage providers.** Consider other object-storage
   services only after S3 sync has reliable verification, errors, and recovery.
-- [ ] **Provide release packaging.** Produce versioned archives with checksums,
-  a changelog, supported-platform notes, and a clean install/upgrade guide.
+  (`tools/sync/providers.py`: `s3` default verified path, `s3-compatible`/
+  `minio`/`wasabi`/`spaces`/`b2`/`r2` via `--endpoint-url` gated behind
+  verification + `--dry-run` guidance, plus offline `local` provider for
+  testing.)
+

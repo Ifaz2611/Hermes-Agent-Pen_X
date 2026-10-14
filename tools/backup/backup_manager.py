@@ -212,51 +212,221 @@ def verify_backup(backup_path: Path) -> Tuple[bool, str, Dict[str, Any]]:
     return True, f"Verified all {len(manifest.get('files', {}))} files successfully", manifest
 
 
+def list_backups(backup_dir: Path) -> List[Path]:
+    """List backup archives/folders sorted oldest-first (by mtime, then name)."""
+    backup_dir = backup_dir.resolve()
+    if not backup_dir.is_dir():
+        return []
+    candidates: List[Path] = []
+    for p in backup_dir.iterdir():
+        name = p.name
+        if p.is_file() and name.startswith("hermes_backup_") and name.endswith(".zip"):
+            candidates.append(p)
+        elif p.is_dir() and (p / "backup_manifest.json").is_file():
+            candidates.append(p)
+    def _key(p: Path):
+        try:
+            return (p.stat().st_mtime, p.name)
+        except OSError:
+            return (0.0, p.name)
+    return sorted(candidates, key=_key)
+
+
+def prune_backups(
+    backup_dir: Path,
+    keep_last_n: int,
+    dry_run: bool = False,
+) -> Tuple[int, str, Dict[str, Any]]:
+    """Retention: keep the N newest backups, delete (or preview) older ones.
+
+    Returns (rc, message, details{kept, to_delete}).
+    Never deletes the newest N; with keep_last_n<=0 keeps everything.
+    """
+    backup_dir = backup_dir.resolve()
+    if keep_last_n <= 0:
+        return 0, "Retention disabled (keep_last_n<=0): keeping all backups.", {
+            "kept": [str(p) for p in list_backups(backup_dir)], "to_delete": []}
+    if not backup_dir.is_dir():
+        return 1, f"Backup directory not found: {backup_dir}", {"kept": [], "to_delete": []}
+    all_b = list_backups(backup_dir)
+    if len(all_b) <= keep_last_n:
+        return 0, (f"Retention: {len(all_b)} backup(s) present, "
+                    f"keeping all (keep_last_n={keep_last_n})."), {
+            "kept": [str(p) for p in all_b], "to_delete": []}
+    to_delete = all_b[:len(all_b) - keep_last_n]
+    kept = all_b[len(all_b) - keep_last_n:]
+    if dry_run:
+        print(f"[DRY-RUN] Retention preview: would keep {len(kept)}, delete {len(to_delete)} "
+              f"in {backup_dir} (keep_last_n={keep_last_n}):")
+        for p in to_delete:
+            print(f"  [DELETE] {p.name}")
+        for p in kept:
+            print(f"  [KEEP]   {p.name}")
+        return 0, (f"Would delete {len(to_delete)} old backup(s), keep {len(kept)}."), {
+            "kept": [str(p) for p in kept], "to_delete": [str(p) for p in to_delete]}
+    errors = []
+    for p in to_delete:
+        try:
+            if p.is_file():
+                p.unlink()
+            else:
+                shutil.rmtree(p)
+            print(f"[PRUNE] Deleted old backup: {p.name}")
+        except Exception as exc:
+            errors.append(f"{p.name}: {exc}")
+    if errors:
+        return 1, f"Retention partially failed: {'; '.join(errors)}", {
+            "kept": [str(p) for p in kept], "to_delete": [str(p) for p in to_delete]}
+    return 0, f"Retention: deleted {len(to_delete)} old backup(s), kept {len(kept)}.", {
+        "kept": [str(p) for p in kept], "to_delete": [str(p) for p in to_delete]}
+
+
+def preview_restore(backup_path: Path, dest_dir: Path) -> Dict[str, Any]:
+    """Preview restore actions without modifying files.
+
+    Returns {valid, message, to_create, to_overwrite_same, conflicts, manifest}.
+    A conflict = destination exists AND content hash differs from the backup.
+    Identical files are safe to skip (not conflicts).
+    """
+    backup_path = backup_path.resolve()
+    dest_dir = dest_dir.resolve()
+    valid, msg, manifest = verify_backup(backup_path)
+    if not valid:
+        return {"valid": False, "message": msg, "to_create": [], "to_overwrite_same": [],
+                "conflicts": [], "manifest": {}}
+    to_create: List[str] = []
+    same: List[str] = []
+    conflicts: List[Dict[str, Any]] = []
+    for rel, info in manifest.get("files", {}).items():
+        target = dest_dir / rel
+        if not target.is_file():
+            to_create.append(rel)
+        else:
+            try:
+                existing_hash = compute_file_sha256(target)
+            except Exception:
+                existing_hash = "<unreadable>"
+            if existing_hash.lower() == str(info.get("sha256", "")).lower():
+                same.append(rel)
+            else:
+                try:
+                    sz = target.stat().st_size
+                except OSError:
+                    sz = -1
+                conflicts.append({"path": rel, "existing_size": sz,
+                                  "existing_sha256": existing_hash,
+                                  "backup_sha256": info.get("sha256"),
+                                  "backup_size": info.get("size")})
+    return {"valid": True, "message": msg, "to_create": sorted(to_create),
+            "to_overwrite_same": sorted(same), "conflicts": sorted(conflicts, key=lambda c: c["path"]),
+            "manifest": manifest}
+
+
 def restore_backup(
     backup_path: Path,
     dest_dir: Path,
-    dry_run: bool = False
+    dry_run: bool = False,
+    overwrite_policy: str = "fail",
 ) -> int:
+    """Restore with conflict protection (no silent overwrites).
+
+    overwrite_policy:
+      - 'fail': abort if any destination file differs (safest default).
+      - 'skip': keep existing differing files, restore only new/identical ones.
+      - 'overwrite': overwrite differing files after listing them.
+      - 'keep-both': never overwrite; write conflicting restores to
+        '<path>.restored.<timestamp>' alongside the existing file.
+    Identical files (same SHA-256) are never conflicts and are skipped/verified.
+    dry_run always prints a full preview and modifies nothing.
+    """
+    valid_policies = ("fail", "skip", "overwrite", "keep-both")
+    if overwrite_policy not in valid_policies:
+        print(f"[ERROR] Unknown --overwrite-policy '{overwrite_policy}'. "
+              f"Choose from: {', '.join(valid_policies)}")
+        return 2
     backup_path = backup_path.resolve()
     dest_dir = dest_dir.resolve()
-    
-    print(f"\n[RESTORE] Verifying backup integrity before restore...")
-    valid, msg, manifest = verify_backup(backup_path)
-    if not valid:
-        print(f"[ERROR] Restore aborted: {msg}")
+
+    print("\n[RESTORE] Verifying backup integrity before restore...")
+    preview = preview_restore(backup_path, dest_dir)
+    if not preview["valid"]:
+        print(f"[ERROR] Restore aborted: {preview['message']}")
         return 1
-        
-    print(f"[RESTORE] Integrity check passed: {msg}")
-    
+    manifest = preview["manifest"]
+
+    print(f"[RESTORE] Integrity check passed: {preview['message']}")
+
     enc_count = manifest.get("vault_encrypted_count", 0)
     if enc_count > 0:
         print(f"\n[SECURITY] Restoring {enc_count} vault-encrypted files.")
         print(SECURITY_LIMITATIONS_TEXT)
-        
+
+    to_create = preview["to_create"]
+    same = preview["to_overwrite_same"]
+    conflicts = preview["conflicts"]
+    print(f"[RESTORE] Preview: {len(to_create)} new, {len(same)} identical (skip), "
+          f"{len(conflicts)} conflict(s, exist + differ) -> {dest_dir}")
+    for rel in sorted(to_create)[:10]:
+        print(f"  [CREATE] {rel}")
+    if len(to_create) > 10:
+        print(f"  ... and {len(to_create) - 10} more new files.")
+    for c in conflicts[:10]:
+        print(f"  [CONFLICT] {c['path']} (existing {c['existing_size']}b "
+              f"{c['existing_sha256'][:12] if len(str(c['existing_sha256'])) > 12 else c['existing_sha256']} "
+              f"!= backup {str(c['backup_sha256'])[:12]})")
+    if len(conflicts) > 10:
+        print(f"  ... and {len(conflicts) - 10} more conflicts.")
+    print(f"[RESTORE] Overwrite policy: {overwrite_policy}")
+
     if dry_run:
-        print(f"[DRY-RUN] Would restore {len(manifest.get('files', {}))} files to: {dest_dir}")
-        for rel in sorted(manifest.get("files", {}).keys())[:10]:
-            print(f"  -> {dest_dir / rel}")
-        if len(manifest.get("files", {})) > 10:
-            print(f"  ... and {len(manifest.get('files', {})) - 10} more files.")
+        print("[DRY-RUN] Preview only — no files were modified.")
+        if conflicts and overwrite_policy == "fail":
+            print("[DRY-RUN] With --overwrite-policy fail this restore WOULD abort.")
         return 0
-        
+
+    if conflicts and overwrite_policy == "fail":
+        print(f"[ERROR] Restore aborted: {len(conflicts)} existing file(s) would be "
+              "overwritten. Nothing was modified.")
+        print("  Resolve with --overwrite-policy skip|overwrite|keep-both, or back up "
+              "the destination first. Preview with --dry-run.")
+        return 1
+
     dest_dir.mkdir(parents=True, exist_ok=True)
-    
+
+    # Determine skip set for 'skip' policy.
+    skip_paths = {c["path"] for c in conflicts} if overwrite_policy == "skip" else set()
+    if skip_paths:
+        print(f"[RESTORE] Skipping {len(skip_paths)} conflicting file(s) (policy=skip).")
+
+    ts_suffix = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+
+    def _target_for(rel: str) -> Path:
+        if overwrite_policy == "keep-both" and any(c["path"] == rel for c in conflicts):
+            base = dest_dir / rel
+            return base.with_name(base.name + f".restored.{ts_suffix}")
+        return dest_dir / rel
+
     # Extract and perform post-extraction verification
     restored_count = 0
+    skipped_count = 0
+    kept_both: List[str] = []
     verification_errors = []
-    
+
     if zipfile.is_zipfile(backup_path):
         with zipfile.ZipFile(backup_path, "r") as zf:
             for rel, info in manifest.get("files", {}).items():
+                if rel in skip_paths:
+                    skipped_count += 1
+                    continue
                 arc_name = f"data/{rel}"
-                target_p = dest_dir / rel
+                target_p = _target_for(rel)
+                if str(target_p) != str(dest_dir / rel):
+                    kept_both.append(f"{rel} -> {target_p.name}")
                 target_p.parent.mkdir(parents=True, exist_ok=True)
-                
+
                 content = zf.read(arc_name)
                 target_p.write_bytes(content)
-                
+
                 # Immediate post-extraction verification
                 h = compute_file_sha256(target_p)
                 if h != info["sha256"].lower():
@@ -266,24 +436,38 @@ def restore_backup(
     elif backup_path.is_dir():
         data_dir = backup_path / "data"
         for rel, info in manifest.get("files", {}).items():
+            if rel in skip_paths:
+                skipped_count += 1
+                continue
             src_p = data_dir / rel
-            target_p = dest_dir / rel
+            target_p = _target_for(rel)
+            if str(target_p) != str(dest_dir / rel):
+                kept_both.append(f"{rel} -> {target_p.name}")
             target_p.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src_p, target_p)
-            
+
             h = compute_file_sha256(target_p)
             if h != info["sha256"].lower():
                 verification_errors.append(f"{rel}: expected {info['sha256']}, got {h}")
             else:
                 restored_count += 1
-                
+    else:
+        print(f"[ERROR] Unsupported backup format: {backup_path}")
+        return 1
+
     if verification_errors:
         print(f"[ERROR] Restoration verification failed for {len(verification_errors)} files:")
         for err in verification_errors:
             print(f"  - {err}")
         return 1
-        
+
     print(f"\n[RESTORE] Successfully restored and verified {restored_count} files into: {dest_dir}")
+    if skipped_count:
+        print(f"[RESTORE] Skipped {skipped_count} conflicting file(s) (existing data preserved).")
+    if kept_both:
+        print(f"[RESTORE] keep-both: {len(kept_both)} file(s) written alongside existing data:")
+        for entry in kept_both[:10]:
+            print(f"  - {entry}")
     print("[RESTORE] Complete.\n")
     return 0
 
@@ -304,21 +488,41 @@ def main() -> int:
     p_res.add_argument("--destination", "--dest", type=Path, default=None, help="Restore destination directory (default: data/)")
     p_res.add_argument("--root", type=Path, default=None, help="Repository root path")
     p_res.add_argument("--dry-run", action="store_true", help="Preview restore without modifying files")
-    
+    p_res.add_argument("--overwrite-policy", choices=("fail", "skip", "overwrite", "keep-both"),
+                       default="fail",
+                       help="How to handle existing differing files (default: fail = abort, no silent overwrites)")
+    p_res.add_argument("--overwrite", action="store_true",
+                       help="Shorthand for --overwrite-policy overwrite (explicit opt-in to replace existing files)")
+
     # Verify
     p_ver = subparsers.add_parser("verify", help="Verify backup integrity against manifest")
     p_ver.add_argument("backup_file", type=Path, help="Path to backup zip archive or folder")
-    
+
+    # Prune (retention)
+    p_pru = subparsers.add_parser("prune", help="Apply retention: keep N newest backups, preview/delete older ones")
+    p_pru.add_argument("--backup-dir", type=Path, default=None,
+                       help="Directory containing backups (default: .cache/backups/)")
+    p_pru.add_argument("--keep", type=int, default=5, help="Keep last N backups (default 5)")
+    p_pru.add_argument("--root", type=Path, default=None, help="Repository root path")
+    p_pru.add_argument("--dry-run", action="store_true", help="Preview without deleting")
+
     args = parser.parse_args()
     root = find_repo_root(getattr(args, "root", None))
-    
+
     if args.action == "backup":
         src = args.source if args.source else (root / "data")
         rc, _, _ = create_backup(source_dir=src, dest_path=args.destination, repo_root=root)
         return rc
     elif args.action == "restore":
         dest = args.destination if args.destination else (root / "data")
-        return restore_backup(backup_path=args.backup_file, dest_dir=dest, dry_run=args.dry_run)
+        policy = "overwrite" if getattr(args, "overwrite", False) else args.overwrite_policy
+        return restore_backup(backup_path=args.backup_file, dest_dir=dest,
+                              dry_run=args.dry_run, overwrite_policy=policy)
+    elif args.action == "prune":
+        bdir = args.backup_dir if args.backup_dir else (root / ".cache" / "backups")
+        rc, msg, _ = prune_backups(backup_dir=bdir, keep_last_n=args.keep, dry_run=args.dry_run)
+        print(f"[PRUNE] {msg}")
+        return rc
     elif args.action == "verify":
         ok, msg, _ = verify_backup(args.backup_file)
         if ok:
